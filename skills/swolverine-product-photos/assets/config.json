@@ -1,0 +1,65 @@
+{
+  "_comment": "Swolverine product-photo house spec. Values decoded from Chance's creatine front edit (WIP/Product-Images.psd) and approved on 2026-09-24/25. Change only with Chance's sign-off.",
+  "canvas_px": 3247,
+  "baseline_y": 2913,
+  "margin_px": 334,
+  "side_margin_min_px": 334,
+  "reflection": {
+    "opacity": 0.0392156862745098,
+    "overlap_px": 97,
+    "_comment": "Flipped product silhouette in black at 10/255 opacity. The flip axis puts the silhouette's top 97px above the product bottom, hidden behind the product: refl(y) = alpha(2*baseline - overlap - y)."
+  },
+  "drop_shadow": false,
+  "podium_reference_rgb": [
+    209.5,
+    206.3,
+    208.3
+  ],
+  "_podium_comment": "Median 8-bit RGB of the podium's side band in the creatine shoot (CreatineMonohydrate-1 1.tif, rows 3450-3600, cols 3800-4200). Every new shoot is gain-matched to this before the tone LUT.",
+  "podium_sample_rows_below_bottom": [
+    260,
+    400
+  ],
+  "photoshop_app": "Adobe Photoshop 2026",
+  "qa": {
+    "brand_blue_srgb": {
+      "CreatineMonohydrate": "#00BEF4",
+      "WheyIsolate": "#00C3EA",
+      "WheyIsolate-Vanilla": "#00C1E6",
+      "Equilone": "#00B0E0",
+      "CitrullineMalate": "#00B6F0",
+      "KreAlkalyn": "#00BCF3",
+      "Colostrum": "#00C0ED",
+      "BCAA-Pomegranate": "#00BEE3"
+    },
+    "white_panel_srgb_approx": [
+      238,
+      239,
+      241
+    ],
+    "max_clipped_pct_warn": 3.0
+  },
+  "sessions": {
+    "_comment": "Exposure is matched per capture session (EXIF DateTimeOriginal date). Within a session the camera and podium don't move, so other raws are matched to the session's reference raw by comparing the podium at identical pixel coordinates. Add a new session only after Chance approves its look.",
+    "2026-08-31": {
+      "reference_raw": "CreatineMonohydrate-1 1.tif",
+      "gain": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "note": "Creatine shoot. Chance's hand edit defines the house look; no gain. WheyIsolate-Vanilla-Front was also shot this day but zoomed in with the bag on the riser, so same-pixel podium matching is invalid (the wall check catches it); gain 1, approved 2026-09-25.",
+      "reference_raw_note": "Chance deleted the raw from Raw/ (2026-09-30); a copy is Archive/CreatineMonohydrate-1 1 (1).tif, which find_ref_raw() uses."
+    },
+    "2026-09-04": {
+      "reference_raw": "WheyIsolate-Front.tif",
+      "gain": [
+        0.977,
+        0.984,
+        0.987
+      ],
+      "note": "Whey shoot, approved 2026-09-25. About 5 levels brighter and warmer than the creatine shoot. PreBundle.tif is from this session but shot at ISO 400 (others ISO 320). Chance preferred the vanilla's lighting: the chocolate Front/Back were light-matched to WheyIsolate-Vanilla:Front (match-light, 2026-09-25).",
+      "reference_raw_note": "WheyIsolate-Front.tif was deleted (2026-09-30), so same-session ratios can't be measured. The tabletop riser setup (Beta-Alanine, L-Glutamine) was brighter: approved with --gain 0.9323,0.9390,0.9418 (white-anchored to CitrullineMalate:Front) on 2026-10-01."
+    }
+  }
+}
