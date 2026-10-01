@@ -1,20 +1,28 @@
 {
   "name": "swolverine-product-photos",
-  "description": "Swolverine's marketplace for the product-photos plugin.",
   "owner": {
     "name": "Swolverine"
+  },
+  "metadata": {
+    "description": "Swolverine's marketplace for the product-photos plugin."
   },
   "plugins": [
     {
       "name": "swolverine-product-photos",
       "description": "Turns raw Swolverine studio shots into website-ready product images: a cut-out on a transparent canvas with the house tone curve and a faint reflection. Pixel-accurate, no generative fill.",
-      "source": ".",
-      "version": "0.1.1",
+      "source": "./",
+      "version": "0.1.2",
       "author": {
         "name": "Swolverine"
       },
       "category": "design",
-      "keywords": ["product-photography", "photoshop", "shopify", "ecommerce", "image-processing"]
+      "keywords": [
+        "product-photography",
+        "photoshop",
+        "shopify",
+        "ecommerce",
+        "image-processing"
+      ]
     }
   ]
 }

@@ -1,6 +1,6 @@
 {
   "name": "swolverine-product-photos",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Turns raw Swolverine studio shots into website-ready product images: a cut-out on a transparent canvas with the house tone curve and a faint reflection. Pixel-accurate, no generative fill.",
   "author": {
     "name": "Swolverine"
