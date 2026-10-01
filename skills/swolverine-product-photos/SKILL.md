@@ -1,6 +1,6 @@
 ---
 name: swolverine-product-photos
-description: Swolverine (SWOL) product-photo cleanup pipeline. Turns raw studio shots of Swolverine supplement packaging (creatine jar, whey pouch, and new products shot on the same white podium) into website-ready product images. The output is a cut-out on a 3247px transparent canvas with the house tone curve and a faint reflection, saved as an sRGB PNG in Final/ plus a layered 16-bit TIFF in WIP/. The process is pixel-accurate with zero generative fill, so label fine print survives. Use this whenever Chance or anyone else wants Swolverine product photos edited, cleaned up, cut out, retouched, colour-matched, "made to look like the creatine/whey ones", batch-processed, or exported for Shopify. Also use it for new raws landing in "Design/Swolverine/Product images/Raw", including when they only say "do the next product", "process the new shots" or "same as before for the <product> images".
+description: Swolverine (SWOL) product-photo cleanup pipeline. Turns raw studio shots of Swolverine supplement packaging (creatine jar, whey pouch, and new products shot on the same white podium) into website-ready product images. The output is a cut-out on a 3247px transparent canvas with the house tone curve and a faint reflection, saved as an sRGB PNG in Final/PNG/ plus a layered 16-bit TIFF in WIP/. The process is pixel-accurate with zero generative fill, so label fine print survives. Use this whenever Chance or anyone else wants Swolverine product photos edited, cleaned up, cut out, retouched, colour-matched, "made to look like the creatine/whey ones", batch-processed, or exported for Shopify. Also use it for new raws landing in "Design/Swolverine/Product images/Raw", including when they only say "do the next product", "process the new shots" or "same as before for the <product> images".
 ---
 
 # Swolverine product photos
@@ -22,9 +22,9 @@ Each person keeps their own product-images folder. Point the pipeline at it with
 
 - `Raw/`: camera TIFFs, 8149×5435, 16-bit, Adobe RGB. Named `<Product>-<View>.tif`, e.g. `WheyIsolate-Front.tif`. The creatine raws have odd names; pass `--raw View=path` for files like that.
 - `WIP/`: layered masters `<Product>-<View>.tif` (16-bit Adobe RGB, transparent). This folder also holds Chance's own `Product-Images.psd`, `CreatineMonohydrate.tif` and `Originals/`, which you must never modify. When Chance approves replacing an exported file, move the old PNG/TIFF into `WIP/Previous versions/` first (Chance asked for this on 2026-09-25).
-- `Final/`: web images `<Product>-<View>.png` (3247×3247, 8-bit sRGB, transparent), plus `Final/WebP/<Product>-<View>.webp`, a quality-90 WebP of every PNG, about 15× smaller (Chance asked for small WebPs on 2026-09-29). There are no other folders; don't create a "renders" folder.
+- `Final/PNG/`: web images `<Product>-<View>.png` (3247×3247, 8-bit sRGB, transparent). Chance moved them here on 2026-10-01. `Final/WebP/<Product>-<View>.webp` holds a quality-90 WebP of every PNG, about 15× smaller (Chance asked for small WebPs on 2026-09-29). Don't create any other folders, such as a "renders" folder.
 - `Archive/`: old material, but it holds the Aug 31 session reference raw (`CreatineMonohydrate-1 1 (1).tif`); never delete it. Chance deletes raws from `Raw/` once they're exported.
-- `Final/Bundles/`, `Final/WebP/Bundles/`: group shots, which Chance moved there.
+- `Final/PNG/Bundles/`, `Final/WebP/Bundles/`: group shots. Export them with `--subdir Bundles`.
 
 ## How to run it
 
@@ -60,12 +60,12 @@ P=WheyIsolate; V=Front,Back                                               # prod
    - Check the clipped-to-white % and the brand blue against the approved values.
 6. **Show Chance** the contact sheet and QA crops, with a short numbered summary: scale, gain, clipping, anything to retouch by hand. Wait for approval.
 7. **Export:** `$PY $SW export --product $P --views $V`.
-   - It writes the PNG to Final/ and the WebP to Final/WebP/, then builds the layered TIFF in Photoshop.
+   - It writes the PNG to Final/PNG/ and the WebP to Final/WebP/, then builds the layered TIFF in Photoshop. With `--subdir Bundles`, they go to Final/PNG/Bundles/ and Final/WebP/Bundles/.
    - The WebP is lossy quality 90 at full size: 0.2–0.5 MB against 3–6 MB for the PNG.
    - At that quality the fine print, including the creatine's tiny blue sub-heading, is indistinguishable from the PNG at 2× zoom.
    - It's decoded back and checked: transparency must match exactly and colour must be within 2.5 levels on average (it's usually 1.1–1.6), or it isn't kept.
    - `webp --lossless` gives pixel-identical files instead, about 35% smaller than the PNG.
-   - If Chance re-exports a hand-edited PNG, refresh its WebP with `$PY $SW webp --product $P --views $V --overwrite`. Use `--views all` for every PNG in Final/.
+   - If Chance re-exports a hand-edited PNG, refresh its WebP with `$PY $SW webp --product $P --views $V --overwrite`. Use `--views all` for every PNG in Final/PNG/ (add `--subdir Bundles` for the group shots).
    - It then checks Photoshop's own render of the TIFF against the PNG, and only moves the TIFF into WIP/ if they match (mean under 1 level).
 
 Viewing images: read only the small JPEGs the script writes, never the 265MB raws or the .npy arrays. That keeps the session cheap.
@@ -120,7 +120,7 @@ This is decoded from Chance's creatine front edit (`WIP/Product-Images.psd`, gro
   - **No podium.** Run `podium-cut --no-podium`. Mixed-height groups fool the gap finder: it trimmed about 32px off product bottoms before this flag existed.
   - **Exposure.** Use `--gain white:WheyIsolate-Vanilla:Front`. Products sit at different distances from the lights in each setup: the same bottle was 11% brighter in one shot than in another. Wall and podium matching gave 22–47% clipping, and product-white anchoring brought it to 0–3%.
   - **Scale.** Small groups get upscaled (bottles-only at 1.3–1.9×), so tell Chance.
-  - **Where they go.** Chance keeps bundles in `Final/Bundles/` and `Final/WebP/Bundles/` (layered TIFFs stay in WIP/). Export writes to Final/, so move the bundle PNG/WebP into those subfolders afterwards.
+  - **Where they go.** Bundles live in `Final/PNG/Bundles/` and `Final/WebP/Bundles/`; layered TIFFs stay in WIP/. Run `export --subdir Bundles` and the files land there directly.
 - **Adding a product that isn't in the shot** (Bundle 12 + Intra, approved 2026-10-01). Only composite real camera pixels, taken from a shot with the same setup, camera angle and light. The single-product riser shots don't match the tabletop angle.
   - Find every edge the donor product hides in its own shot, and every edge the target shot hides. Then pick a layout where something in front still covers each hidden edge.
   - Mock up the options before building one. Driver scripts: `~/Library/Caches/swolverine-product-photos/_batch/bundle12_intra/` (`segment.py`, `compose.py`, `build_tiff.py`).

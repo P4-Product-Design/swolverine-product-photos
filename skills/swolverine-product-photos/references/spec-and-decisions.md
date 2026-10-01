@@ -102,5 +102,5 @@ Reflection = the product's own alpha flipped about y = 2·2913 − 97 = 5729, as
 - Preferred the vanilla pouch's lighting (the creatine setup: more shape, a darker lower body) over the chocolate's flatter, brighter light. The chocolate Front/Back were re-exported with `match-light` to the vanilla. The pre-match versions are in `WIP/Previous versions/`.
 - "AI generators drop the fine print": this is the reason for the whole non-generative approach.
 - "The cutout is slightly off from the original": the creatine back and side had a different outline from the front, and the lid was off-centre. Fixed with outline matching.
-- Wanted a single transparent PNG per view, not several variants. PNGs go in Final/, layered TIFFs in WIP/, and there's no extra folder.
+- Wanted a single transparent PNG per view, not several variants. PNGs go in Final/PNG/ (moved there 2026-10-01; WebPs in Final/WebP/, bundles in a Bundles/ subfolder of each). Layered TIFFs go in WIP/, and there's no extra folder.
 - Wanted editable layers in the TIFFs, not flattened images.

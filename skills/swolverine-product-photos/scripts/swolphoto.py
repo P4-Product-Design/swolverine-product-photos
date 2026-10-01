@@ -11,8 +11,9 @@ Subcommands (run in order; each prints what it wrote and what to look at):
   render       exposure-match to the house podium, frame on the canvas, apply the look, add reflection
   match-light  optional: match broad lighting to an approved donor shot of the same packaging (Multiply layer)
   qa           100% fine-print crops, edge crops, clipping and brand-blue check
-  export       sRGB transparent PNG -> Final/ (+ q90 WebP -> Final/WebP/), layered 16-bit TIFF (built in Photoshop) -> WIP/
-  webp         WebP copies of PNGs already in Final/ (--views all for every PNG)
+  export       sRGB transparent PNG -> Final/PNG/ (+ q90 WebP -> Final/WebP/), layered 16-bit TIFF (built in Photoshop) -> WIP/
+               --subdir Bundles puts group shots in Final/PNG/Bundles/ + Final/WebP/Bundles/
+  webp         WebP copies of PNGs already in Final/PNG/ (--views all for every PNG)
 
 Typical run:
   PY=~/.cache/swolverine-product-photos/venv/bin/python
@@ -474,7 +475,7 @@ def cmd_render(a):
         m.setdefault(v, {}).update(scale=scale, gain=gain.tolist(), gain_source=how, canvas_bbox=[int(xx.min()), int(yy.min()), int(xx.max()), int(yy.max())])
         print(f'{v}: on canvas x {xx.min()}-{xx.max()} y {yy.min()}-{yy.max()}  -> {v}_preview.jpg')
         sheet.append(Image.open(os.path.join(wd, f'{v}_preview.jpg')))
-    ref_png = sorted(glob.glob(os.path.join(a.root, 'Final', '*-Front.png')))
+    ref_png = sorted(glob.glob(os.path.join(a.root, 'Final', 'PNG', '*-Front.png')))
     ref_png = [p for p in ref_png if not os.path.basename(p).startswith(a.product)][:1]
     for p in ref_png:
         im = Image.open(p).resize((1000, 1000), Image.LANCZOS); bg = Image.new('RGBA', im.size, (255, 255, 255, 255)); bg.alpha_composite(im); sheet.append(bg.convert('RGB'))
@@ -578,11 +579,23 @@ def cmd_qa(a):
 # ---------------------------------------------------------------- webp
 WEBP_QUALITY = 90   # Chance wanted much smaller WebPs (2026-09-29). At q90 fine print is indistinguishable from the PNG at 2x zoom
 
+def png_dir(a):
+    """Where web PNGs go: Final/PNG/[<subdir>/] (Chance's layout since 2026-10-01), or --final-dir."""
+    return a.final_dir or os.path.join(a.root, 'Final', 'PNG', *([a.subdir] if a.subdir else []))
+
+def webp_path(png):
+    """Final/PNG/<sub>/<name>.png -> Final/WebP/<sub>/<name>.webp. A PNG outside a Final/PNG tree (custom --final-dir)
+    gets its WebP in a WebP/ folder beside it."""
+    d, name = os.path.split(os.path.abspath(png)); parts = d.split(os.sep)
+    if 'PNG' in parts and parts[parts.index('PNG') - 1] == 'Final':
+        i = parts.index('PNG'); d = os.sep.join(parts[:i] + ['WebP'] + parts[i + 1:])
+    else: d = os.path.join(d, 'WebP')
+    return os.path.join(d, os.path.splitext(name)[0] + '.webp')
+
 def write_webp(png, overwrite=False, lossless=False):
-    """Final/<name>.png -> Final/WebP/<name>.webp: lossy q90 (about 0.2-0.5 MB vs 3-6 MB PNG), alpha and sRGB profile kept.
+    """Final/PNG/<name>.png -> Final/WebP/<name>.webp: lossy q90 (about 0.2-0.5 MB vs 3-6 MB PNG), alpha and sRGB profile kept.
     Decoded back and checked: alpha must match the PNG exactly, colour mean error under 2.5 levels. --lossless = pixel-identical."""
-    out_dir = os.path.join(os.path.dirname(png), 'WebP'); os.makedirs(out_dir, exist_ok=True)
-    out = os.path.join(out_dir, os.path.splitext(os.path.basename(png))[0] + '.webp')
+    out = webp_path(png); os.makedirs(os.path.dirname(out), exist_ok=True)
     if os.path.exists(out) and not overwrite: sys.exit(f'{out} exists. Rerun with --overwrite only if Chance said to replace it.')
     im = Image.open(png); icc = im.info.get('icc_profile'); im = im.convert('RGBA')
     if lossless: im.save(out, 'WEBP', lossless=True, quality=100, method=6, exact=True, icc_profile=icc)
@@ -595,8 +608,9 @@ def write_webp(png, overwrite=False, lossless=False):
     return out
 
 def cmd_webp(a):
-    """WebP copies of PNGs already in Final/ (e.g. after Chance re-exports a hand-edited PNG). --views all = every PNG."""
-    final = a.final_dir or os.path.join(a.root, 'Final')
+    """WebP copies of PNGs already in Final/PNG/ (e.g. after Chance re-exports a hand-edited PNG). --views all = every PNG
+    in that folder (add --subdir Bundles for the group shots)."""
+    final = png_dir(a)
     pngs = sorted(glob.glob(os.path.join(final, '*.png'))) if a.views == 'all' else [os.path.join(final, f'{a.product}-{v}.png') for v in views(a)]
     for p in pngs:
         if not os.path.exists(p): sys.exit(f'{p} not found')
@@ -604,7 +618,7 @@ def cmd_webp(a):
 
 # ---------------------------------------------------------------- export
 def cmd_export(a):
-    wd = work_dir(a); final = a.final_dir or os.path.join(a.root, 'Final'); wip = a.wip_dir or os.path.join(a.root, 'WIP')
+    wd = work_dir(a); final = png_dir(a); wip = a.wip_dir or os.path.join(a.root, 'WIP')
     os.makedirs(final, exist_ok=True); os.makedirs(wip, exist_ok=True)
     from PIL import ImageCms
     icc_srgb = ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes()
@@ -614,7 +628,7 @@ def cmd_export(a):
         name = f'{a.product}-{v}'; png = os.path.join(final, name + '.png'); tif = os.path.join(wip, name + '.tif')
         for p in ([png] + ([] if a.no_tiff else [tif])):
             if os.path.exists(p) and not a.overwrite: sys.exit(f'{p} exists. Rerun with --overwrite only if Chance said to replace it.')
-        wp = os.path.join(final, 'WebP', name + '.webp')
+        wp = webp_path(png)
         if os.path.exists(wp) and not a.overwrite: sys.exit(f'{wp} exists. Rerun with --overwrite only if Chance said to replace it.')
         rgba = np.load(os.path.join(wd, f'{v}_rgba.npy'))
         px = np.dstack([adobe_to_srgb(rgba[..., :3]), np.clip(rgba[..., 3], 0, 1)])
@@ -712,10 +726,11 @@ def main():
             p.add_argument('--ref-view', help='view of this product compared with the donor (default first view); the field is reused for the other views')
             p.add_argument('--smooth', type=float, default=0.08, help='smoothing, fraction of product size (default 0.08: broad light only; below ~0.05 it starts copying the donor'"'"'s creases)')
         if name == 'webp':
-            p.add_argument('--final-dir'); p.add_argument('--overwrite', action='store_true')
+            p.add_argument('--final-dir', help='PNG folder (default Final/PNG/[--subdir])'); p.add_argument('--subdir', help='e.g. Bundles: Final/PNG/Bundles/ (WebPs in Final/WebP/Bundles/)'); p.add_argument('--overwrite', action='store_true')
             p.add_argument('--lossless', action='store_true', help='pixel-identical WebP (about 35%% smaller than PNG) instead of the default q90 (about 10-15x smaller)')
         if name == 'export':
-            p.add_argument('--final-dir'); p.add_argument('--wip-dir'); p.add_argument('--overwrite', action='store_true'); p.add_argument('--no-tiff', action='store_true')
+            p.add_argument('--final-dir', help='PNG folder (default Final/PNG/[--subdir])'); p.add_argument('--subdir', help='e.g. Bundles for group shots: Final/PNG/Bundles/ + Final/WebP/Bundles/ (the TIFF still goes to WIP/)')
+            p.add_argument('--wip-dir'); p.add_argument('--overwrite', action='store_true'); p.add_argument('--no-tiff', action='store_true')
     a = ap.parse_args()
     if not a.root:
         sys.exit('No product-images folder set. Pass --root /path/to/folder, or set SWOL_PHOTO_ROOT, or save {"root": "/path/to/folder"} in '
