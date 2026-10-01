@@ -121,6 +121,15 @@ This is decoded from Chance's creatine front edit (`WIP/Product-Images.psd`, gro
   - **Exposure.** Use `--gain white:WheyIsolate-Vanilla:Front`. Products sit at different distances from the lights in each setup: the same bottle was 11% brighter in one shot than in another. Wall and podium matching gave 22–47% clipping, and product-white anchoring brought it to 0–3%.
   - **Scale.** Small groups get upscaled (bottles-only at 1.3–1.9×), so tell Chance.
   - **Where they go.** Chance keeps bundles in `Final/Bundles/` and `Final/WebP/Bundles/` (layered TIFFs stay in WIP/). Export writes to Final/, so move the bundle PNG/WebP into those subfolders afterwards.
+- **Adding a product that isn't in the shot** (Bundle 12 + Intra, approved 2026-10-01). Only composite real camera pixels, taken from a shot with the same setup, camera angle and light. The single-product riser shots don't match the tabletop angle.
+  - Find every edge the donor product hides in its own shot, and every edge the target shot hides. Then pick a layout where something in front still covers each hidden edge.
+  - Mock up the options before building one. Driver scripts: `~/Library/Caches/swolverine-product-photos/_batch/bundle12_intra/` (`segment.py`, `compose.py`, `build_tiff.py`).
+  - Read a layered master's Product layer straight from the TIFF: tag 37724 → `Lr16` block → `psd_tools` `LayerInfo.read` with a 4-byte length prefix. Re-grade it and check it against the PNG (Bundle-105 matched within 0.21 levels).
+  - Bottle edge against a tub: trace the colour edge from the tub's side. Where print sits at the edge, use the twin bottle's measured width profile instead (bottle symmetry holds within about 1–2px). Smooth each unbroken run of rows separately.
+  - Match exposure on the same packaging's whites (bottle against bottle), not on a printed blue: blue and white disagreed by up to 5%.
+  - Edges that stood against the backdrop carry a light halo when moved over a colour. Pull them in 2px (masking only).
+  - The layered TIFF has a "Products" group (Normal blend) with one masked full-frame layer per source and Look unclipped at the top of the group. Verify it like the standard export (0.28 levels).
+  - `compose.py` overwrites `12_*.npy`; the plain render is kept as `12plain_*`, and segmentation must read that.
 - **Exposure when the session reference raw is gone.** Chance deletes processed raws.
   - The Aug 31 reference survives as `Archive/CreatineMonohydrate-1 1 (1).tif`, which the script finds by itself.
   - The Sep 4 whey reference is gone. The approved Sep 4 gain clipped the tabletop tubs (Beta-Alanine, L-Glutamine) 26–32%, because that setup was brighter than the whey.
