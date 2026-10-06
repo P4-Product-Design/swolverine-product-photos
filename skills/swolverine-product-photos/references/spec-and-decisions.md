@@ -6,7 +6,7 @@ This explains why each number in `assets/config.json` is what it is. Read it bef
 1. Where the look came from
 2. Framing
 3. Exposure matching between shoots
-4. Reflection and shadow
+4. Contact shadow
 5. Colour management and outputs
 6. Products
 7. What Chance corrected along the way
@@ -17,8 +17,8 @@ Chance hand-edited one image, the creatine front, in `WIP/Product-Images.psd` (g
 - **"Remove tool edits copy 4"**: the raw, cropped to a 3247 square and scaled 160.17%, no rotation. Its layer mask is the jar cutout. The Remove tool was used on it in two places: the edge of the supplement-facts panel showing along the right side of the jar, and the dark contact line and notch at the base.
 - **"Light 1"**: Photoshop 2026's new Brightness adjustment with Whites +10, Highlights +10, Shadows +10. The legacy brightness/contrast fields read 0; the real values are in the content-generator data.
 - **"Curves 1"**: per-channel black and white points: R 39→0 / 225→255, G 34 / 223, B 32 / 224. This neutralises the lavender cast of the wall and lifts contrast.
-- **"Remove tool edits"** at 10/255 opacity with a black Colour Overlay: the reflection.
-- A drop shadow (20%, 8px, multiply) is defined, but layer effects are **disabled**, so it doesn't render. Don't add a shadow.
+- **"Remove tool edits"** at 10/255 opacity with a black Colour Overlay: the reflection. It was the house look until 2026-10-06, when Chance replaced it with the contact shadow (section 4).
+- A drop shadow (20%, 8px, multiply) is defined, but layer effects are **disabled**, so it doesn't render. Don't turn it on; the contact shadow in section 4 is a separate layer.
 
 The Brightness adjustment isn't documented, so the combined adjustment was measured as a per-channel lookup table (`assets/tone_lut.npy`, 1024 entries per channel, input = raw Adobe RGB encoded value). It matches Photoshop's own render to 0.1 of a level on average; it's pointwise, not local. `assets/look_curves.json` is the same curve as 8 to 14 Curves points per channel for the layered TIFF, within about 0.7 of a level. On the creatine front only, 0.08% of pixels (text edges) differ by up to 8 levels, because the Brightness tool treats hard edges slightly differently.
 
@@ -41,9 +41,17 @@ Each capture session has slightly different light, so exposure is matched **per 
 - **A new session** can't be matched automatically with confidence. The podium is side-lit, from the right in both known sessions, and the gradient differed a lot: creatine podium 202→212 left to right, whey 197→223. So "the podium's brightness" depends on where you sample; a centre sample made the whey about 3% too dark in testing. The script gives a first estimate. Confirm it against the existing Finals, get Chance's approval, and record it in `config.json`.
 - Don't use the wall as a reference: it's farther from the product and lit differently.
 
-## 4. Reflection and shadow
+## 4. Contact shadow
 
-Reflection = the product's own alpha flipped about y = 2·2913 − 97 = 5729, as black at 10/255 (about 3.9%) opacity, below the product. It's faint on purpose. There's no drop shadow (see section 1).
+Since 2026-10-06 every product sits on a soft contact shadow; the reflection is retired. Chance compared it with the website's current images and asked for "a similar subtle shadow instead of the reflection", then for the closer-to-site version, "a tad lighter".
+
+- **Source.** The shadow is lifted from the old website creatine render (800px WebP), not drawn. `assets/shadow_template.npz` holds its darkness (255 − L) around that jar's base. The jar itself is filled in from its surroundings (Telea inpaint) so the lookup never reads jar pixels, and the template is zeroed more than about 50 site px above the base so the site lid's grey edge can't leak in. It's neutral grey (R≈G≈B).
+- **Fit to each product.** x scales with the body width measured 8% of the product width above the baseline, so side edges map to side edges. Each column's distance below the product's own (lightly smoothed) bottom outline maps to the same scaled distance below the site jar's outline. The shadow follows a pouch's crinkled bottom or a jar's curved base. The site's WebP blocks are smoothed with a 0.7 site px blur at the edge and 2.2 px further out.
+- **Density.** 0.8× the site (`config.json` → `shadow.strength`). At website size, the shadow just under the creatine base reads 222/232/240 (left), 241/246/248 (centre) and 241/245/248 (right) on white, against the site's 212/228/238, 240/246/247 and 242/246/250. It reaches about 95–120px below the base on the canvas and is darker under the left with a halo a little further right, like the site.
+- **What was tried first.** A two-layer synthetic shadow fitted to the site's numbers (option A) halved the error of a hand-tuned one but couldn't reproduce the site's denser shadow under the left of the jar. Lifting the site's own shadow (option B) matched within 1–3 levels everywhere.
+- **Group shots.** One shadow for the whole group came out about 2× too deep (it scales with width) and streaked the gaps between bottles. `shadow_group` splits the bottom outline into products at upward notches (prominence ≥ 12px), gaps, and ≥ 18px steps near the base (a pouch behind a tub), and gives each product its own shadow, combined as 1 − Π(1 − s).
+- **Product pixels are never changed.** The shadow is black behind the product: alpha = a + s(1 − a), colour = graded · a / alpha.
+- **Migration.** All 96 Finals and their TIFF masters were converted on 2026-10-06 without re-rendering: the reflection was stripped from each PNG, the shadow added, and the master's Reflection layer swapped for a Shadow layer. The reflection versions are in `WIP/Previous versions/<name>-reflection.png/.tif`.
 
 ## 5. Colour management and outputs
 
@@ -104,3 +112,4 @@ Reflection = the product's own alpha flipped about y = 2·2913 − 97 = 5729, as
 - "The cutout is slightly off from the original": the creatine back and side had a different outline from the front, and the lid was off-centre. Fixed with outline matching.
 - Wanted a single transparent PNG per view, not several variants. PNGs go in Final/PNG/ (moved there 2026-10-01; WebPs in Final/WebP/, bundles in a Bundles/ subfolder of each). Layered TIFFs go in WIP/, and there's no extra folder.
 - Wanted editable layers in the TIFFs, not flattened images.
+- Replaced the faint reflection with a soft contact shadow like the one on the current website images (2026-10-06): the closer-to-site option, a tad lighter (0.8×), on every product.

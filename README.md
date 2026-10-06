@@ -1,6 +1,6 @@
 # swolverine-product-photos
 
-A Claude Code plugin that turns raw studio shots of Swolverine (SWOL) supplement packaging into website-ready product images: a cut-out on a 3247px transparent canvas with the house tone curve and a faint reflection, saved as an sRGB PNG (plus a small WebP) for the site and a layered 16-bit TIFF master.
+A Claude Code plugin that turns raw studio shots of Swolverine (SWOL) supplement packaging into website-ready product images: a cut-out on a 3247px transparent canvas with the house tone curve and a soft contact shadow, saved as an sRGB PNG (plus a small WebP) for the site and a layered 16-bit TIFF master.
 
 It reproduces the look Chance built by hand in Photoshop. **It never uses generative fill, AI upscaling or inpainting.** Every step only masks, moves, resamples or tone-maps real camera pixels, so label fine print (the Net Wt line, nutrition facts, Lot/EXP) survives untouched.
 
@@ -70,6 +70,7 @@ swolverine-product-photos/
 │       │   ├── config.json          # house spec and approved capture-session gains
 │       │   ├── look_curves.json     # tone curve points
 │       │   ├── tone_lut.npy         # tone lookup table
+│       │   ├── shadow_template.npz  # the contact shadow, lifted from the old website image
 │       │   └── AdobeRGB1998.icc     # colour profile for the raws
 │       └── references/
 │           ├── spec-and-decisions.md       # why each number in config.json is what it is
@@ -82,4 +83,4 @@ swolverine-product-photos/
 
 Edit the files under `skills/swolverine-product-photos/`, bump the `version` in both `.claude-plugin/plugin.json` and the plugin entry in `.claude-plugin/marketplace.json`, commit, and push. Everyone who's installed the plugin picks up the change the next time they run the update command above.
 
-The house look in `assets/config.json` (canvas, baseline, tone curve, reflection, session gains) should only change with Chance's sign-off.
+The house look in `assets/config.json` (canvas, baseline, tone curve, contact shadow, session gains) should only change with Chance's sign-off.

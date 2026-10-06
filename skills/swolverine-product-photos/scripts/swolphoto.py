@@ -8,7 +8,7 @@ Subcommands (run in order; each prints what it wrote and what to look at):
   preview      small sRGB JPEGs of the raws, so you can see what you're working with
   mask         Photoshop Select Subject -> raw-size mask per view (via crash-safe JSX)
   podium-cut   remove the podium from the mask by tracing the dark gap under the product
-  render       exposure-match to the house podium, frame on the canvas, apply the look, add reflection
+  render       exposure-match to the house podium, frame on the canvas, apply the look, add the contact shadow
   match-light  optional: match broad lighting to an approved donor shot of the same packaging (Multiply layer)
   qa           100% fine-print crops, edge crops, clipping and brand-blue check
   export       sRGB transparent PNG -> Final/PNG/ (+ q90 WebP -> Final/WebP/), layered 16-bit TIFF (built in Photoshop) -> WIP/
@@ -32,7 +32,7 @@ SKILL = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ASSETS = os.path.join(SKILL, 'assets')
 CFG = json.load(open(os.path.join(ASSETS, 'config.json')))
 N = CFG['canvas_px']; BASE = CFG['baseline_y']; MARGIN = CFG['margin_px']
-REFL_OP = CFG['reflection']['opacity']; REFL_OVERLAP = CFG['reflection']['overlap_px']
+SHADOW = CFG['shadow']
 
 def default_root():
     """Product-images folder (holds Raw/, WIP/, Final/): $SWOL_PHOTO_ROOT, else "root" in
@@ -89,17 +89,111 @@ def apply_look(rgb):
     lut = np.load(os.path.join(ASSETS, 'tone_lut.npy')); x = np.arange(lut.shape[1])
     return np.stack([np.interp(np.clip(rgb[..., c], 0, 1) * (lut.shape[1] - 1), x, lut[c]) for c in range(3)], -1).astype(np.float32)
 
-def reflection_alpha(alpha):
-    A = 2 * BASE - REFL_OVERLAP; ys = np.arange(N); src = A - ys; ok = (src >= 0) & (src < N)
-    r = np.zeros_like(alpha); r[ok] = alpha[src[ok]]; return r
+# ---------------------------------------------------------------- contact shadow
+# The house shadow (Chance, 2026-10-06) is the one on the old website images, lifted off the site's creatine
+# render once and stored as assets/shadow_template.npz (darkness 0-255 around the site jar's base, the jar itself
+# filled from its surroundings). It is laid along each product's own bottom outline: x scales with the body width
+# (side edges -> side edges), and each column's distance below the outline maps to the same, scaled distance below
+# the site jar's outline. Black, at SHADOW['strength'] of the site's density. Never touches product pixels.
+_TPL = {}
+def _template():
+    if not _TPL:
+        t = np.load(os.path.join(ASSETS, SHADOW['template']))
+        cx, hw, a0, a1 = t['meta']; arc = np.full(t['D'].shape[1], np.nan); arc[int(a0):int(a1) + 1] = t['arc']
+        _TPL.update(D=t['D'], arc=arc, cx=float(cx), hw=float(hw), a0=int(a0), a1=int(a1))
+    return _TPL
 
-def compose(graded, alpha):
-    """Straight-alpha RGBA over transparency + flat-on-white, both Adobe RGB."""
-    ra = reflection_alpha(alpha) * REFL_OP
-    out_a = alpha + ra * (1 - alpha)
-    rgb = graded * alpha[..., None] / np.maximum(out_a, 1e-6)[..., None]   # reflection is black
-    flat = graded * alpha[..., None] + (1 - ra[..., None]) * (1 - alpha[..., None])
+def _bottom(alpha):
+    """Lowest product row per column (NaN where the column is empty)."""
+    col = alpha > .5; has = col.any(0); yb = np.full(alpha.shape[1], np.nan)
+    yb[has] = alpha.shape[0] - 1 - np.argmax(col[::-1, has], 0); return yb
+
+def _shadow_from(alpha, dist, cx, hw, ybo, a_lo, a_hi, win=None):
+    """Sample the template for one product: centre cx, body half-width hw, smoothed bottom outline ybo
+    (held flat past the arc ends a_lo..a_hi). win = (r0, r1, c0, c1) limits the work to a window."""
+    T = _template(); k = T['hw'] / hw; n = alpha.shape[0]
+    r0, r1, c0, c1 = win or (0, n, 0, n)
+    X = np.arange(c0, c1, dtype=np.float32); xw = T['cx'] + (X - cx) * k
+    yrw = T['arc'][np.clip(np.round(xw).astype(int), T['a0'], T['a1'])]
+    yy = np.arange(r0, r1, dtype=np.float32)[:, None]
+    mapx = np.broadcast_to(xw[None, :], (r1 - r0, c1 - c0)).astype(np.float32)
+    mapy = (yrw[None, :] + (yy - ybo[None, c0:c1]) * k).astype(np.float32)
+    samp = cv2.remap(T['D'], mapx, mapy, cv2.INTER_LINEAR, borderValue=0)
+    # de-block the site's WebP: light blur right at the edge, more out in the soft halo (sigmas in site pixels)
+    d = dist[r0:r1, c0:c1] * k
+    near = cv2.GaussianBlur(samp, (0, 0), SHADOW['blur_near'] / k); far = cv2.GaussianBlur(samp, (0, 0), SHADOW['blur_far'] / k)
+    w = np.exp(-d / 3.0); out = np.zeros((n, n), np.float32)
+    out[r0:r1, c0:c1] = np.clip((w * near + (1 - w) * far) / 255, 0, 1); return out
+
+def _smooth_outline(yb, a_lo, a_hi):
+    ybo = yb.copy(); v = ybo[a_lo:a_hi + 1]; good = ~np.isnan(v)
+    v = np.interp(np.arange(len(v)), np.where(good)[0], v[good])
+    ybo[a_lo:a_hi + 1] = np.convolve(np.pad(v, 4, mode='edge'), np.ones(9) / 9, 'valid')
+    ybo[:a_lo] = ybo[a_lo]; ybo[a_hi + 1:] = ybo[a_hi]; return ybo
+
+def shadow_single(alpha):
+    """One product: scale from the body width 8% of the product width above the baseline."""
+    n = alpha.shape[0]; yb = _bottom(alpha); ys, xs = np.where(alpha > .5)
+    H = ys.max() - ys.min() + 1; W = xs.max() - xs.min() + 1
+    bx = np.where(yb >= BASE - .04 * H)[0]; a_lo, a_hi = bx[0], bx[-1]
+    xb = np.where(alpha[int(BASE - round(.08 * W))] > .5)[0]; xl, xr = xb[0], xb[-1]
+    dist = cv2.distanceTransform((alpha < .5).astype(np.uint8), cv2.DIST_L2, 5)
+    return _shadow_from(alpha, dist, (xl + xr) / 2, (xr - xl) / 2, _smooth_outline(yb, a_lo, a_hi), a_lo, a_hi)
+
+def shadow_group(alpha, min_prom=12, min_w=60, step_px=18):
+    """Group/bundle shot: split the bottom contour into products and give each its own shadow. Splits at upward
+    cusps (two bases meeting), gaps (empty columns) and >=18px steps near the base (a pouch behind a tub).
+    Scaling the whole group as one product made the shadow ~2x too deep and streaked the gaps (2026-10-06)."""
+    from scipy.signal import find_peaks
+    from scipy.ndimage import median_filter
+    n = alpha.shape[0]; yb = _bottom(alpha); xs = np.where(~np.isnan(yb))[0]; x0, x1 = xs[0], xs[-1]
+    v = yb[x0:x1 + 1].copy(); gap = np.isnan(v)
+    vf = np.interp(np.arange(len(v)), np.where(~gap)[0], v[~gap]); vs = median_filter(vf, 15)
+    pk, _ = find_peaks(-vs, prominence=min_prom, distance=120)
+    v5 = median_filter(vf, 5); h = 4; dd = np.zeros_like(v5); dd[h:-h] = v5[2 * h:] - v5[:-2 * h]
+    low = np.nanmax(v) - 0.12 * len(v); steps = []           # the group's outer edges are steep too, but far above the base
+    for i in np.argsort(-np.abs(dd)):
+        if abs(dd[i]) < step_px: break
+        if min(v5[max(0, i - 30)], v5[min(len(v5) - 1, i + 30)]) > low and all(abs(i - q) > 40 for q in steps): steps.append(i)
+    merged = []
+    for c in sorted(list(pk) + steps):
+        if not merged or c - merged[-1] > 40: merged.append(c)
+    cuts = set([0, len(v) - 1] + merged); gi = np.where(gap)[0]
+    if len(gi):
+        for r in np.split(gi, np.where(np.diff(gi) > 1)[0] + 1): cuts |= {r[0] - 1, r[-1] + 1}
+    cuts = sorted(c for c in cuts if 0 <= c < len(v))
+    dist = cv2.distanceTransform((alpha < .5).astype(np.uint8), cv2.DIST_L2, 5)
+    s = np.zeros((n, n), np.float32); segs = []
+    for c, d in zip(cuts[:-1], cuts[1:]):
+        xa, xb = x0 + c, x0 + d; w = xb - xa + 1
+        if w - 1 < min_w or np.all(np.isnan(yb[xa:xb + 1])): continue
+        seg = yb[xa:xb + 1]; ia = np.where(seg >= np.nanmax(seg) - 0.045 * w)[0]; a_lo, a_hi = xa + ia[0], xa + ia[-1]
+        ybo = np.full(n, np.nan); ybo[a_lo:a_hi + 1] = yb[a_lo:a_hi + 1]; ybo = _smooth_outline(ybo, a_lo, a_hi)
+        win = (max(0, int(np.nanmin(ybo[a_lo:a_hi + 1]) - 0.35 * w)), min(n, int(np.nanmax(ybo) + 0.3 * w) + 1),
+               max(0, int(xa - 0.7 * w)), min(n, int(xb + 0.7 * w) + 1))
+        s = 1 - (1 - s) * (1 - _shadow_from(alpha, dist, (xa + xb) / 2, w / 2, ybo, a_lo, a_hi, win)); segs.append((int(xa), int(xb)))
+    return s, segs
+
+def contact_shadow(alpha, group=False):
+    """Shadow alpha (0..1, black) for the canvas. group=True for bundle/group shots."""
+    if group:
+        s, segs = shadow_group(alpha); print(f'   group shot: {len(segs)} products along the base, each with its own shadow (x ranges {segs})')
+    else: s = shadow_single(alpha)
+    return (s * SHADOW['strength']).astype(np.float32)
+
+def compose(graded, alpha, shadow):
+    """Straight-alpha RGBA over transparency + flat-on-white, both Adobe RGB. The shadow is black."""
+    out_a = alpha + shadow * (1 - alpha)
+    rgb = graded * alpha[..., None] / np.maximum(out_a, 1e-6)[..., None]
+    flat = graded * alpha[..., None] + (1 - shadow[..., None]) * (1 - alpha[..., None])
     return np.dstack([rgb, out_a]).astype(np.float32), flat.astype(np.float32)
+
+def load_shadow(wd, v, A):
+    """The shadow render saved for this view. Renders made before v0.2.0 have none: use the single-product one."""
+    p = os.path.join(wd, f'{v}_shadow.npy')
+    if os.path.exists(p): return np.load(p)
+    print(f'{v}: no {v}_shadow.npy (rendered before v0.2.0); using the single-product shadow. Rerun render for a group shot.')
+    return contact_shadow(A)
 
 def to_jpg(path, rgb_adobe, max_side=None, q=88):
     im = Image.fromarray((adobe_to_srgb(rgb_adobe) * 255 + 0.5).astype(np.uint8))
@@ -227,7 +321,7 @@ def cmd_podium_cut(a):
         if a.gap_row: gap, ratio = int(a.gap_row), 1.0
         if a.no_podium or gap is None or ratio < 0.12:
             np.save(os.path.join(wd, f'{v}_mask.npy'), (np.load(os.path.join(wd, f'{v}_psmask.npy')) / 255).astype(np.float32))
-            m.setdefault(v, {})['podium'] = None
+            m.setdefault(v, {})['podium'] = None; m[v]['group'] = bool(a.no_podium)
             print(f'{v}: ' + ('--no-podium: ' if a.no_podium else f'no podium found in the mask (largest width change {ratio:.2f}); ') + 'Select Subject mask used as-is.')
             continue
         if a.body_cols:   # product narrower than what it stands on (jar on the riser disc): trace and keep only the body's columns
@@ -466,13 +560,17 @@ def cmd_render(a):
         ung = full.copy(); A = np.zeros((N, N), np.float32)
         ys0, xs0 = max(0, oy), max(0, ox); ys1, xs1 = min(N, oy + th), min(N, ox + tw)
         ung[ys0:ys1, xs0:xs1] = img[ys0 - oy:ys1 - oy, xs0 - ox:xs1 - ox]; A[ys0:ys1, xs0:xs1] = al[ys0 - oy:ys1 - oy, xs0 - ox:xs1 - ox]
-        graded = apply_look(ung); rgba, flat = compose(graded, A)
+        group = a.shadow == 'group' or (a.shadow == 'auto' and m.get(v, {}).get('group', False))
+        sh = contact_shadow(A, group) if a.shadow != 'none' else np.zeros_like(A)
+        graded = apply_look(ung); rgba, flat = compose(graded, A, sh)
         lmp = os.path.join(wd, f'{v}_lightmap.npy')
         if os.path.exists(lmp): os.remove(lmp); print(f'{v}: removed old light match (rerun match-light if it is still wanted)')
         np.save(os.path.join(wd, f'{v}_ungraded.npy'), ung); np.save(os.path.join(wd, f'{v}_alpha.npy'), A); np.save(os.path.join(wd, f'{v}_rgba.npy'), rgba)
+        np.save(os.path.join(wd, f'{v}_shadow.npy'), sh)
         to_jpg(os.path.join(wd, f'{v}_preview.jpg'), flat, 1000)
         yy, xx = np.where(A > 0.5)
-        m.setdefault(v, {}).update(scale=scale, gain=gain.tolist(), gain_source=how, canvas_bbox=[int(xx.min()), int(yy.min()), int(xx.max()), int(yy.max())])
+        m.setdefault(v, {}).update(scale=scale, gain=gain.tolist(), gain_source=how, canvas_bbox=[int(xx.min()), int(yy.min()), int(xx.max()), int(yy.max())],
+                                   shadow='none' if a.shadow == 'none' else ('group' if group else 'single'))
         print(f'{v}: on canvas x {xx.min()}-{xx.max()} y {yy.min()}-{yy.max()}  -> {v}_preview.jpg')
         sheet.append(Image.open(os.path.join(wd, f'{v}_preview.jpg')))
     ref_png = sorted(glob.glob(os.path.join(a.root, 'Final', 'PNG', '*-Front.png')))
@@ -536,7 +634,7 @@ def cmd_match_light(a):
     for v in vs:
         ung = np.load(os.path.join(wd, f'{v}_ungraded.npy')); A = np.load(os.path.join(wd, f'{v}_alpha.npy'))
         lm = light_map(A, field); np.save(os.path.join(wd, f'{v}_lightmap.npy'), lm)
-        rgba, flat = compose(apply_look(ung * lm), A); np.save(os.path.join(wd, f'{v}_rgba.npy'), rgba)
+        rgba, flat = compose(apply_look(ung * lm), A, load_shadow(wd, v, A)); np.save(os.path.join(wd, f'{v}_rgba.npy'), rgba)
         to_jpg(os.path.join(wd, f'{v}_preview.jpg'), flat, 1000)
         m.setdefault(v, {})['light_match'] = dict(donor=a.to, smooth=a.smooth, field_min=float(field.min()))
         print(f'{v}: light match applied (multiplier {lm[A > 0.99].min():.3f}..{lm[A > 0.99].max():.3f} in encoded values) -> {v}_preview.jpg')
@@ -639,7 +737,7 @@ def cmd_export(a):
         inp = os.path.join(wd, f'{v}_ps_input.tif')
         # masks ride along as ordinary alpha channels (extrasamples=0) so Photoshop never has to load a
         # selection from another document (that crashes Photoshop 2026, see troubleshooting.md)
-        stack = np.dstack([ung, A, reflection_alpha(A)])
+        stack = np.dstack([ung, A, load_shadow(wd, v, A)])
         tifffile.imwrite(inp, (np.clip(stack, 0, 1) * 65535 + 0.5).astype(np.uint16), photometric='rgb', extrasamples=[0, 0],
                          compression='zlib', planarconfig='contig', extratags=[(34675, 7, len(icc_adobe), icc_adobe, True)])
         light = ''; lmp = os.path.join(wd, f'{v}_lightmap.npy')
@@ -673,9 +771,9 @@ for (var i=0;i<jobs.length;i++){ var j=jobs[i]; var doc=null;
     if (j.light){ var ld=app.open(new File(j.light)); ld.selection.selectAll(); ld.selection.copy(); ld.close(SaveOptions.DONOTSAVECHANGES);
       app.activeDocument=doc; doc.activeLayer=prod; var lt=doc.paste(); lt=doc.activeLayer; lt.name="Light match (Multiply)"; lt.blendMode=BlendMode.MULTIPLY; lt.grouped=true; top=lt; }
     doc.activeLayer=top; curvesLayer("Look (Curves)");
-    var refl=doc.artLayers.add(); refl.name="Reflection"; fillAll(doc,0);
-    doc.selection.load(doc.channels[4], SelectionType.REPLACE); maskFromSel(); doc.selection.deselect(); refl.opacity=3.92; refl.move(prod, ElementPlacement.PLACEAFTER);
-    var wb=doc.artLayers.add(); wb.name="White background"; fillAll(doc,255); wb.move(refl, ElementPlacement.PLACEAFTER); wb.visible=false;
+    var shd=doc.artLayers.add(); shd.name="Shadow"; fillAll(doc,0);
+    doc.selection.load(doc.channels[4], SelectionType.REPLACE); maskFromSel(); doc.selection.deselect(); shd.opacity=100; shd.move(prod, ElementPlacement.PLACEAFTER);
+    var wb=doc.artLayers.add(); wb.name="White background"; fillAll(doc,255); wb.move(shd, ElementPlacement.PLACEAFTER); wb.visible=false;
     doc.channels[4].remove(); doc.channels[3].remove();
     var o=new TiffSaveOptions(); o.layers=true; o.transparency=true; o.embedColorProfile=true; o.imageCompression=TIFFEncoding.TIFFZIP; o.layerCompression=LayerCompression.ZIP; o.alphaChannels=false;
     doc.saveAs(new File(j.out), o, true, Extension.LOWERCASE);
@@ -721,6 +819,7 @@ def main():
             p.add_argument('--ref-view', help='view whose height sets the scale (default first view)')
             p.add_argument('--gain', default='auto', help='auto (podium match) | none | r,g,b | white:Product:View (anchor on the product whites; for tabletop group/bundle shots)')
             p.add_argument('--scale', help='override the fill-height scale (only with Chance sign-off)')
+            p.add_argument('--shadow', default='auto', choices=['auto', 'single', 'group', 'none'], help='contact shadow: auto = group (one shadow per product) for views cut with podium-cut --no-podium, else single')
         if name == 'match-light':
             p.add_argument('--to', required=True, help='approved donor shot as Product:View, e.g. WheyIsolate-Vanilla:Front (must be rendered in its cache)')
             p.add_argument('--ref-view', help='view of this product compared with the donor (default first view); the field is reused for the other views')

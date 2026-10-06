@@ -4,12 +4,15 @@
   "baseline_y": 2913,
   "margin_px": 334,
   "side_margin_min_px": 334,
-  "reflection": {
-    "opacity": 0.0392156862745098,
-    "overlap_px": 97,
-    "_comment": "Flipped product silhouette in black at 10/255 opacity. The flip axis puts the silhouette's top 97px above the product bottom, hidden behind the product: refl(y) = alpha(2*baseline - overlap - y)."
+  "shadow": {
+    "template": "shadow_template.npz",
+    "strength": 0.8,
+    "blur_near": 0.7,
+    "blur_far": 2.2,
+    "_comment": "Contact shadow under the product, replacing the reflection (Chance, 2026-10-06). It is the shadow from the old website creatine render, stored as darkness around that jar's base in shadow_template.npz and re-fitted to each product's bottom outline, at 0.8x the site's density ('a tad lighter'). blur_near/blur_far are in site pixels and smooth out the site's WebP blocks. Group shots get one shadow per product. The retired reflection was the silhouette flipped at 2*2913-97, black at 10/255."
   },
   "drop_shadow": false,
+  "_drop_shadow_comment": "The PSD's layer-effect drop shadow stays off; the contact shadow above is a separate layer.",
   "podium_reference_rgb": [
     209.5,
     206.3,

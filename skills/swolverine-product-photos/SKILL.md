@@ -1,6 +1,6 @@
 ---
 name: swolverine-product-photos
-description: Swolverine (SWOL) product-photo cleanup pipeline. Turns raw studio shots of Swolverine supplement packaging (creatine jar, whey pouch, and new products shot on the same white podium) into website-ready product images. The output is a cut-out on a 3247px transparent canvas with the house tone curve and a faint reflection, saved as an sRGB PNG in Final/PNG/ plus a layered 16-bit TIFF in WIP/. The process is pixel-accurate with zero generative fill, so label fine print survives. Use this whenever Chance or anyone else wants Swolverine product photos edited, cleaned up, cut out, retouched, colour-matched, "made to look like the creatine/whey ones", batch-processed, or exported for Shopify. Also use it for new raws landing in "Design/Swolverine/Product images/Raw", including when they only say "do the next product", "process the new shots" or "same as before for the <product> images".
+description: Swolverine (SWOL) product-photo cleanup pipeline. Turns raw studio shots of Swolverine supplement packaging (creatine jar, whey pouch, and new products shot on the same white podium) into website-ready product images. The output is a cut-out on a 3247px transparent canvas with the house tone curve and a soft contact shadow, saved as an sRGB PNG in Final/PNG/ plus a layered 16-bit TIFF in WIP/. The process is pixel-accurate with zero generative fill, so label fine print survives. Use this whenever Chance or anyone else wants Swolverine product photos edited, cleaned up, cut out, retouched, colour-matched, "made to look like the creatine/whey ones", batch-processed, or exported for Shopify. Also use it for new raws landing in "Design/Swolverine/Product images/Raw", including when they only say "do the next product", "process the new shots" or "same as before for the <product> images".
 ---
 
 # Swolverine product photos
@@ -51,7 +51,8 @@ P=WheyIsolate; V=Front,Back                                               # prod
    - Put the view with the least print near its base first with `--guide-view`. The whey back's "Lot:… EXP:…" line broke a naive trace, so the back reused the front's gap curve.
    - Check `<View>_podiumcut.jpg`: the red line must sit on the product's bottom edge, not on the podium seam and not on printed text.
 4. **Render:** `$PY $SW render --product $P --views $V`.
-   - It matches exposure, frames the product (fill-height, see the spec), applies the look, and adds the reflection.
+   - It matches exposure, frames the product (fill-height, see the spec), applies the look, and adds the contact shadow (saved as `<View>_shadow.npy` for export).
+   - Views cut with `podium-cut --no-podium` (group shots) automatically get one shadow per product. Override with `--shadow single|group|none`.
    - Exposure is matched per **capture session** (the EXIF capture date). Known sessions in `assets/config.json` use their approved gain. Other raws from the same session are matched to that session's reference raw by comparing the podium at the same pixels, which also absorbs ISO changes (e.g. PreBundle at ISO 400).
    - If it says **NEW capture session**, the gain is only an estimate. The podium is side-lit, so its reading depends on where it's sampled. Compare the contact sheet with the existing Finals (white panels about 237–241, brand blue), adjust with `--gain r,g,b`, get Chance's approval, then add the session to `config.json` → `sessions` (reference_raw, gain, note).
    - It writes a `contact_sheet.jpg` that includes an existing Final/ product for comparison.
@@ -81,10 +82,10 @@ This is decoded from Chance's creatine front edit (`WIP/Product-Images.psd`, gro
 | Size (new products) | fill-height: top margin = bottom margin = 334px, same scale for every view of a product (from the first/ref view). Too wide? Fit the width with 334px side margins. Chance chose this on 2026-09-25 |
 | Look | per-channel tone curve (`assets/tone_lut.npy`) matching Chance's Brightness (Whites/Highlights/Shadows +10) plus Curves (R 39→0/225→255, G 34/223, B 32/224) |
 | Exposure match | per capture session (EXIF date). 2026-08-31 creatine: gain 1. 2026-09-04 whey/PreBundle/Shaker: gain (0.977, 0.984, 0.987). A new session needs Chance's approval, then gets recorded in config.json |
-| Reflection | the product silhouette flipped below the baseline, black at 10/255 opacity, overlapping the product bottom by 97px |
-| Drop shadow | **none**. The PSD has one defined, but layer effects are off, so it doesn't render |
+| Shadow | soft contact shadow under the base, black, replacing the old reflection (Chance, 2026-10-06). It's the shadow from the old website creatine image (`assets/shadow_template.npz`), re-fitted to each product's bottom outline and body width, at 0.8× the site's density. About 95–120px deep; darker under the left, halo reaching a little further right. Group shots: one shadow per product |
+| Drop shadow | **none**. The PSD's layer-effect drop shadow stays off; the contact shadow is its own layer |
 | Web export | sRGB PNG, transparent, 8-bit, embedded sRGB profile, plus a quality-90 WebP (transparency exact, sRGB profile kept) in `Final/WebP/` |
-| Master | layered TIFF: Look (Curves, clipped), [Light match (Multiply, clipped), only if match-light was used], Product (ungraded full frame plus layer mask), Reflection, White background (hidden) |
+| Master | layered TIFF: Look (Curves, clipped), [Light match (Multiply, clipped), only if match-light was used], Product (ungraded full frame plus layer mask), Shadow (black fill plus layer mask, 100%; lower its opacity to soften), White background (hidden) |
 | Approved brand blue (sRGB) | creatine #00BEF4, whey (light-matched) #00C3EA, whey vanilla #00C1E6; white panels land around (237–241) |
 
 ## When the job goes beyond the standard pipeline
@@ -120,6 +121,7 @@ This is decoded from Chance's creatine front edit (`WIP/Product-Images.psd`, gro
   - **No podium.** Run `podium-cut --no-podium`. Mixed-height groups fool the gap finder: it trimmed about 32px off product bottoms before this flag existed.
   - **Exposure.** Use `--gain white:WheyIsolate-Vanilla:Front`. Products sit at different distances from the lights in each setup: the same bottle was 11% brighter in one shot than in another. Wall and podium matching gave 22–47% clipping, and product-white anchoring brought it to 0–3%.
   - **Scale.** Small groups get upscaled (bottles-only at 1.3–1.9×), so tell Chance.
+  - **Shadow.** `render` gives each product its own shadow, sized to that product: it splits the bottom outline where two bases meet (an upward notch), at gaps, and where a back product's base steps down to a front one (a pouch behind a tub). Check `contact_sheet.jpg` that each product sits on its own shadow.
   - **Where they go.** Bundles live in `Final/PNG/Bundles/` and `Final/WebP/Bundles/`; layered TIFFs stay in WIP/. Run `export --subdir Bundles` and the files land there directly.
 - **Adding a product that isn't in the shot** (Bundle 12 + Intra, approved 2026-10-01). Only composite real camera pixels, taken from a shot with the same setup, camera angle and light. The single-product riser shots don't match the tabletop angle.
   - Find every edge the donor product hides in its own shot, and every edge the target shot hides. Then pick a layout where something in front still covers each hidden edge.
