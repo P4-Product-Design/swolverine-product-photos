@@ -14,6 +14,8 @@ Subcommands (run in order; each prints what it wrote and what to look at):
   export       sRGB transparent PNG -> Final/PNG/ (+ q90 WebP -> Final/WebP/), layered 16-bit TIFF (built in Photoshop) -> WIP/
                --subdir Bundles puts group shots in Final/PNG/Bundles/ + Final/WebP/Bundles/ + WIP/Bundles/
   webp         WebP copies of PNGs already in Final/PNG/ (--views all for every PNG)
+  reshadow     Chance edited a master by hand (e.g. trimmed the bottom): refit the contact shadow to the master as it is
+               now. Preview first; --apply swaps only the Shadow layer, verifies, and rewrites the PNG + WebP
 
 Typical run:
   PY=~/.cache/swolverine-product-photos/venv/bin/python
@@ -25,7 +27,7 @@ Typical run:
   (show Chance the previews and wait for approval)
   $PY swolphoto.py export     --product WheyIsolate --views Front,Back
 """
-import argparse, glob, json, os, subprocess, sys, textwrap, time
+import argparse, glob, json, os, shutil, subprocess, sys, textwrap, time
 import numpy as np
 
 SKILL = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -132,11 +134,12 @@ def _smooth_outline(yb, a_lo, a_hi):
     ybo[:a_lo] = ybo[a_lo]; ybo[a_hi + 1:] = ybo[a_hi]; return ybo
 
 def shadow_single(alpha):
-    """One product: scale from the body width 8% of the product width above the baseline."""
-    n = alpha.shape[0]; yb = _bottom(alpha); ys, xs = np.where(alpha > .5)
+    """One product: scale from the body width 8% of the product width above its base. The base is the product's own
+    lowest row: the baseline for a render, higher where Chance trimmed the bottom by hand (reshadow)."""
+    n = alpha.shape[0]; yb = _bottom(alpha); ys, xs = np.where(alpha > .5); base = ys.max()
     H = ys.max() - ys.min() + 1; W = xs.max() - xs.min() + 1
-    bx = np.where(yb >= BASE - .04 * H)[0]; a_lo, a_hi = bx[0], bx[-1]
-    xb = np.where(alpha[int(BASE - round(.08 * W))] > .5)[0]; xl, xr = xb[0], xb[-1]
+    bx = np.where(yb >= base - .04 * H)[0]; a_lo, a_hi = bx[0], bx[-1]
+    xb = np.where(alpha[int(base - round(.08 * W))] > .5)[0]; xl, xr = xb[0], xb[-1]
     dist = cv2.distanceTransform((alpha < .5).astype(np.uint8), cv2.DIST_L2, 5)
     return _shadow_from(alpha, dist, (xl + xr) / 2, (xr - xl) / 2, _smooth_outline(yb, a_lo, a_hi), a_lo, a_hi)
 
@@ -690,6 +693,13 @@ def webp_path(png):
     else: d = os.path.join(d, 'WebP')
     return os.path.join(d, os.path.splitext(name)[0] + '.webp')
 
+def write_png(png, rgba_adobe):
+    """Straight-alpha Adobe RGB float RGBA -> the web PNG: 8-bit sRGB, transparent, embedded sRGB profile, 300 dpi."""
+    from PIL import ImageCms
+    icc_srgb = ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes()
+    px = np.dstack([adobe_to_srgb(rgba_adobe[..., :3]), np.clip(rgba_adobe[..., 3], 0, 1)])
+    Image.fromarray((px * 255 + 0.5).astype(np.uint8)).save(png, icc_profile=icc_srgb, dpi=(300, 300), optimize=True)
+
 def write_webp(png, overwrite=False, lossless=False):
     """Final/PNG/<name>.png -> Final/WebP/<name>.webp: lossy q90 (about 0.2-0.5 MB vs 3-6 MB PNG), alpha and sRGB profile kept.
     Decoded back and checked: alpha must match the PNG exactly, colour mean error under 2.5 levels. --lossless = pixel-identical."""
@@ -718,8 +728,6 @@ def cmd_webp(a):
 def cmd_export(a):
     wd = work_dir(a); final = png_dir(a); wip = a.wip_dir or os.path.join(a.root, 'WIP', *([a.subdir] if a.subdir else []))   # bundle masters in WIP/Bundles/ (Chance, 2026-10-06)
     os.makedirs(final, exist_ok=True); os.makedirs(wip, exist_ok=True)
-    from PIL import ImageCms
-    icc_srgb = ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes()
     icc_adobe = open(os.path.join(ASSETS, 'AdobeRGB1998.icc'), 'rb').read()
     todo = []
     for v in views(a):
@@ -728,9 +736,7 @@ def cmd_export(a):
             if os.path.exists(p) and not a.overwrite: sys.exit(f'{p} exists. Rerun with --overwrite only if Chance said to replace it.')
         wp = webp_path(png)
         if os.path.exists(wp) and not a.overwrite: sys.exit(f'{wp} exists. Rerun with --overwrite only if Chance said to replace it.')
-        rgba = np.load(os.path.join(wd, f'{v}_rgba.npy'))
-        px = np.dstack([adobe_to_srgb(rgba[..., :3]), np.clip(rgba[..., 3], 0, 1)])
-        Image.fromarray((px * 255 + 0.5).astype(np.uint8)).save(png, icc_profile=icc_srgb, dpi=(300, 300), optimize=True)
+        write_png(png, np.load(os.path.join(wd, f'{v}_rgba.npy')))
         print(f'{v}: wrote {png}'); write_webp(png, a.overwrite)
         if a.no_tiff: continue
         ung = np.load(os.path.join(wd, f'{v}_ungraded.npy')); A = np.load(os.path.join(wd, f'{v}_alpha.npy'))
@@ -794,6 +800,200 @@ return log.join(" | ");'''
         if ok:
             os.replace(j['out'], j['final']); print(f"   wrote {j['final']}")
 
+# ---------------------------------------------------------------- reshadow (hand-edited masters)
+# Chance retouches masters in Photoshop (2026-10-06: trimmed the protein-bag bottoms up to 24px and removed the gusset),
+# which leaves the Shadow layer where the old bottom was: the bag looks like it floats. reshadow refits the shadow to
+# the master as it is now and swaps only the Shadow layer. Two traps it guards against:
+#  - The TIFF composite is ASSOCIATED (premultiplied) alpha. Reading it as straight alpha darkened every anti-aliased
+#    edge pixel by ~100 levels, and a check on opaque pixels only did not see it.
+#  - Duplicating a layer in and removing the old one un-clipped "Look (Curves)" and "Light match (Multiply)". With
+#    Light match the whole canvas turned opaque; without it the render still matched, so the change was silent.
+def _layer_info(path):
+    """Layer records + channel data of a layered TIFF master (Photoshop tag 37724), its composite as premultiplied
+    0..1 RGBA, and the bit depth."""
+    import struct, io
+    from psd_tools.psd.layer_and_mask import LayerInfo
+    with tifffile.TiffFile(path) as t:
+        pg = t.pages[0]; comp = pg.asarray()
+        assoc = bool(pg.extrasamples) and int(pg.extrasamples[0]) == 1
+        if 37724 not in pg.tags: sys.exit(f'{path}: no Photoshop layers in this TIFF.')
+        blob = bytes(pg.tags[37724].value)
+    for key, depth in ((b'Lr16', 16), (b'Layr', 8)):
+        i = blob.find(b'8BIM' + key)
+        if i >= 0: break
+    else: sys.exit(f'{path}: no 8- or 16-bit layer block found.')
+    ln = struct.unpack('>I', blob[i + 8:i + 12])[0]
+    li = LayerInfo.read(io.BytesIO(struct.pack('>I', ln) + blob[i + 12:i + 12 + ln]), version=1)
+    C = comp.astype(np.float32) / np.iinfo(comp.dtype).max
+    if C.ndim != 3 or C.shape[2] < 4 or C[..., 3].min() > 0.99:
+        sys.exit(f'{path}: the saved composite has no transparency. In Photoshop, hide "White background", save, and rerun.')
+    C = C[..., :4]
+    if not assoc: C[..., :3] *= C[..., 3:]
+    return li, C, depth
+
+def _channel(rec, data, cid, depth, shape):
+    """One layer channel as a full-canvas 0..1 array (None if the layer has no such channel). -1 = transparency, -2 = layer mask."""
+    ids = [c.id for c in rec.channel_info]
+    if cid not in ids: return None
+    if cid == -2:
+        m = rec.mask_data
+        if m is None or m.flags.mask_disabled: return None
+        t, l, b, r, fill = m.top, m.left, m.bottom, m.right, (m.background_color or 0) / 255
+    else: t, l, b, r, fill = rec.top, rec.left, rec.bottom, rec.right, 0.0
+    full = np.full(shape, fill, np.float32); h, w = b - t, r - l
+    if h > 0 and w > 0:
+        dt, mx = ('>u2', 65535) if depth == 16 else ('u1', 255)
+        px = np.frombuffer(data[ids.index(cid)].get_data(w, h, depth, 1), dt).reshape(h, w).astype(np.float32) / mx
+        y0, x0, y1, x1 = max(0, t), max(0, l), min(shape[0], b), min(shape[1], r)
+        if y1 > y0 and x1 > x0: full[y0:y1, x0:x1] = px[y0 - t:y1 - t, x0 - l:x1 - l]
+    return full
+
+def _shadow_record(li):
+    k = [n for n, r in enumerate(li.layer_records) if r.name == 'Shadow']
+    if len(k) != 1: return None, None
+    return k[0], li.layer_records[k[0]]
+
+def _effective_shadow(li, depth, shape):
+    """What the Shadow layer adds: its transparency x layer mask x opacity (0 when hidden). It must be black and Normal."""
+    k, rec = _shadow_record(li)
+    if rec is None: return None, None
+    data = li.channel_image_data[k]
+    a = _channel(rec, data, -1, depth, shape); a = np.ones(shape, np.float32) if a is None else a
+    mk = _channel(rec, data, -2, depth, shape)
+    if mk is not None: a *= mk
+    rgb = [_channel(rec, data, c, depth, shape) for c in (0, 1, 2)]
+    if any(c is not None and c[a > .01].max(initial=0) > 2 / 255 for c in rgb):
+        sys.exit('The Shadow layer is not black (painted by hand?). reshadow only replaces a black shadow; fix it in Photoshop.')
+    if rec.blend_mode not in (b'norm', 'norm') and str(rec.blend_mode).split('.')[-1].lower() != 'normal':
+        sys.exit(f'The Shadow layer blend mode is {rec.blend_mode}, not Normal.')
+    return a * (rec.opacity / 255) * (1.0 if rec.flags.visible else 0.0), rec
+
+def _signature(li, depth):
+    """Per-layer fingerprint (name, clipping, visibility, opacity, blend, decoded channel data) to prove that only the
+    Shadow layer changed."""
+    import hashlib
+    out = []
+    for rec, data in zip(li.layer_records, li.channel_image_data):
+        h = hashlib.sha1()
+        for ci, c in zip(rec.channel_info, data):
+            m = rec.mask_data
+            t, l, b, r = (m.top, m.left, m.bottom, m.right) if ci.id == -2 and m is not None else (rec.top, rec.left, rec.bottom, rec.right)
+            h.update(f'{ci.id}:{t},{l},{b},{r}'.encode())
+            try: h.update(c.get_data(r - l, b - t, depth, 1) if r > l and b > t else b'')
+            except Exception: h.update(c.data)
+        out.append((rec.name, int(rec.clipping), bool(rec.flags.visible), rec.opacity, str(rec.blend_mode), h.hexdigest()))
+    return out
+
+def _base_gap(alpha, s):
+    """Median and 90th-percentile distance (px) from the product's bottom edge down to the darkest shadow row,
+    over the middle 60% of the base. ~2px when the shadow hugs the edge; 20+ when it was left behind."""
+    yb = _bottom(alpha); ys = np.where(alpha > .5)[0]; H = ys.max() - ys.min() + 1
+    cols = np.where(yb >= ys.max() - .04 * H)[0]; lo, hi = cols[0], cols[-1]
+    xs = [x for x in range(int(lo + .2 * (hi - lo)), int(hi - .2 * (hi - lo))) if not np.isnan(yb[x])]
+    g = [int(np.argmax(s[int(yb[x]) + 1:int(yb[x]) + 200, x])) for x in xs]
+    return (float(np.median(g)), float(np.percentile(g, 90))) if g else (float('nan'), float('nan'))
+
+def _reshadow_names(a):
+    names = [f'{a.product}-{v}' for v in views(a)] if a.product and a.views else []
+    names += a.name or []
+    if not names: sys.exit('reshadow needs --product and --views, and/or --name "<master file name>" (repeatable).')
+    return names
+
+def cmd_reshadow(a):
+    """Refit the contact shadow to a master Chance edited by hand, from the master's own composite. Without --apply it
+    only writes a before/after preview to the cache. With --apply it swaps the Shadow layer in Photoshop (nothing else),
+    proves every other layer is untouched, then rewrites the PNG + WebP. Old master + PNG -> WIP/Previous versions/."""
+    wip = a.wip_dir or os.path.join(a.root, 'WIP', *([a.subdir] if a.subdir else [])); final = png_dir(a)
+    wd = a.work or os.path.expanduser('~/Library/Caches/swolverine-product-photos/_reshadow'); os.makedirs(wd, exist_ok=True)
+    jobs, plans = [], {}
+    for name in _reshadow_names(a):
+        tif = os.path.join(wip, name + '.tif')
+        if not os.path.exists(tif): sys.exit(f'{tif} not found.')
+        li, C, depth = _layer_info(tif); shape = C.shape[:2]
+        s_old, rec = _effective_shadow(li, depth, shape)
+        if s_old is None: sys.exit(f'{tif}: no single layer named "Shadow" (a master from before v0.2.0 still has its Reflection; re-export it).')
+        ca = C[..., 3]; A = np.clip((ca - s_old) / np.maximum(1 - s_old, 1e-6), 0, 1)       # product = composite minus the old shadow
+        A[A < 0.5 / 65535] = 0
+        rgb = np.where(A[..., None] > 1e-4, C[..., :3] / np.maximum(A, 1e-4)[..., None], 0).clip(0, 1)   # premultiplied -> straight
+        group = a.shadow == 'group' or (a.shadow == 'auto' and os.path.basename(os.path.dirname(os.path.abspath(tif))) == 'Bundles')
+        s_new = contact_shadow(A, group)
+        op = (rec.opacity / 255) * (1.0 if rec.flags.visible else 0.0)
+        rgba, _ = compose(rgb, A, s_new * op)
+        ys = np.where(A > .5)[0]; g0, g1 = _base_gap(A, s_old), _base_gap(A, s_new * op)
+        cur = C[..., :3] + (1 - ca[..., None]); new = rgba[..., :3] * rgba[..., 3:] + (1 - rgba[..., 3:])   # both on white
+        dw = np.abs(adobe_to_srgb(np.clip(new, 0, 1)) - adobe_to_srgb(np.clip(cur, 0, 1))).max(-1) * 255
+        print(f'{name}: {"group shot, one shadow per product" if group else "single product"}; lowest product row {ys.max()} '
+              f'({BASE - ys.max():+d}px vs the {BASE} baseline); Shadow layer opacity {rec.opacity / 2.55:.0f}%{"" if rec.flags.visible else " (hidden)"}')
+        print(f'   darkest shadow row below the bottom edge: now {g0[0]:.0f}px (p90 {g0[1]:.0f}), refit {g1[0]:.0f}px (p90 {g1[1]:.0f}); '
+              f'change on white: max {dw.max():.0f}, {(dw > 2).sum()} px over 2 levels')
+        # preview: base strip, current over refit, on white
+        ys_, xs_ = np.where(A > .5); x0, x1 = max(0, xs_.min() - 120), min(shape[1], xs_.max() + 120); y0, y1 = max(0, ys_.max() - 160), min(shape[0], ys_.max() + 160)
+        strips = []
+        for img, label in ((cur, 'current master'), (new, 'refit shadow')):
+            st = (adobe_to_srgb(np.clip(img[y0:y1, x0:x1], 0, 1)) * 255 + .5).astype(np.uint8); sc = 1600 / st.shape[1]
+            st = cv2.resize(st, (1600, int(st.shape[0] * sc)), interpolation=cv2.INTER_AREA)
+            cv2.putText(st, f'{name}: {label}', (12, 30), cv2.FONT_HERSHEY_SIMPLEX, .8, (40, 40, 40), 2); strips += [st, np.full((6, 1600, 3), 170, np.uint8)]
+        pv = os.path.join(wd, f'{name}_reshadow.jpg'); Image.fromarray(np.vstack(strips[:-1])).save(pv, quality=88); print(f'   preview: {pv}')
+        plans[name] = dict(tif=tif, li=li, depth=depth, s_new=s_new, op=op, rgba=rgba)
+        if a.apply:
+            sh = np.zeros(shape + (4,), np.uint16); sh[..., 3] = (np.clip(s_new, 0, 1) * 65535 + .5).astype(np.uint16)
+            cv2.imwrite(os.path.join(wd, f'{name}_shadow16.png'), sh)
+            jobs.append(dict(name=name, tif=tif, shadow=os.path.join(wd, f'{name}_shadow16.png'), out=os.path.join(wd, f'{name}_reshadowed.tif')))
+    if not a.apply:
+        print('Preview only. Show Chance the previews; rerun with --apply once approved.'); return
+    body = 'var jobs=' + json.dumps(jobs) + r''';
+function walk(c, f){ for (var i=0;i<c.layers.length;i++){ var l=c.layers[i]; f(l); if (l.typename=="LayerSet") walk(l, f); } }
+var log=[];
+for (var i=0;i<jobs.length;i++){ var j=jobs[i]; var doc=null, sd=null;
+  try{
+    doc=app.open(new File(j.tif));
+    var clip={}, old=null, n=0; walk(doc, function(l){ if (l.typename=="ArtLayer"){ clip[l.id]=l.grouped; if (l.name=="Shadow"){ old=l; n++; } } });
+    if (n!=1) throw "expected one Shadow layer, found "+n;
+    var vis=old.visible, op=old.opacity;
+    sd=app.open(new File(j.shadow)); var src=sd.layers[0]; if (src.isBackgroundLayer) src.isBackgroundLayer=false;
+    src.duplicate(doc, ElementPlacement.PLACEATBEGINNING); sd.close(SaveOptions.DONOTSAVECHANGES); sd=null;
+    app.activeDocument=doc; var sh=doc.layers[0]; sh.name="Shadow"; sh.blendMode=BlendMode.NORMAL; sh.opacity=op;
+    sh.move(old, ElementPlacement.PLACEBEFORE); old.remove(); sh.visible=vis;
+    var fixed=[]; walk(doc, function(l){ if (l.typename=="ArtLayer" && (l.id in clip) && l.grouped!=clip[l.id]){ doc.activeLayer=l; l.grouped=clip[l.id]; fixed.push(l.name); } });
+    var o=new TiffSaveOptions(); o.layers=true; o.transparency=true; o.embedColorProfile=true; o.imageCompression=TIFFEncoding.TIFFZIP; o.layerCompression=LayerCompression.ZIP; o.alphaChannels=false;
+    doc.saveAs(new File(j.out), o, true, Extension.LOWERCASE);
+    log.push(j.name+"\t ok"+(fixed.length ? " (re-clipped "+fixed.join(", ")+")" : ""));
+  }catch(e){ log.push(j.name+"\t ERR line "+e.line+": "+e); }
+  if (sd) sd.close(SaveOptions.DONOTSAVECHANGES); if (doc) doc.close(SaveOptions.DONOTSAVECHANGES);
+}
+return log.join(" | ");'''
+    out = run_jsx(body, 'reshadow', timeout=3600)
+    status = dict(s.split('\t', 1) for s in out.split(' | ') if '\t' in s)
+    pv_dir = os.path.join(a.root, 'WIP', 'Previous versions'); os.makedirs(pv_dir, exist_ok=True)
+    def backup(path):
+        stem, ext = os.path.splitext(os.path.basename(path)); dst = os.path.join(pv_dir, f'{stem}-pre-reshadow{ext}'); k = 2
+        while os.path.exists(dst): dst = os.path.join(pv_dir, f'{stem}-pre-reshadow-{k}{ext}'); k += 1
+        shutil.move(path, dst); return dst
+    for j in jobs:
+        name, p = j['name'], plans[j['name']]; st = status.get(name, ' no result from Photoshop')
+        if not st.strip().startswith('ok') or not os.path.exists(j['out']): print(f'{name}: Photoshop:{st}; master left as it was.'); continue
+        li2, C2, depth2 = _layer_info(j['out']); shape = C2.shape[:2]
+        k_old, _ = _shadow_record(p['li']); k_new, rec2 = _shadow_record(li2)
+        s1, s2 = _signature(p['li'], p['depth']), _signature(li2, depth2)
+        problems = []
+        if k_new != k_old or len(s1) != len(s2): problems.append('layer order changed')
+        else:
+            for n, (u, v) in enumerate(zip(s1, s2)):
+                if n == k_old: continue
+                if u != v: problems.append(f'layer "{u[0]}" changed ' + ', '.join(f for f, x, y in zip(('name', 'clipping', 'visibility', 'opacity', 'blend', 'pixels'), u, v) if x != y))
+            s2a = _channel(rec2, li2.channel_image_data[k_new], -1, depth2, shape)
+            if s2a is None or np.abs(s2a - np.clip(p['s_new'], 0, 1)).max() > 2 / 255: problems.append('new Shadow pixels off')
+            if rec2.opacity != p['li'].layer_records[k_old].opacity or rec2.flags.visible != p['li'].layer_records[k_old].flags.visible: problems.append('Shadow opacity/visibility not kept')
+        ca2 = C2[..., 3]; m = ca2 > 0.05; st2 = C2[..., :3] / np.maximum(ca2, 1e-6)[..., None]
+        d = np.abs(st2 - p['rgba'][..., :3])[m] * 255; da = np.abs(ca2 - p['rgba'][..., 3]).max() * 255
+        if not (d.mean() < 1 and np.percentile(d, 99) < 3 and da < 2.5): problems.append(f'render off (colour mean {d.mean():.2f}, p99 {np.percentile(d, 99):.2f}, alpha max {da:.1f})')
+        if problems: print(f'{name}: NOT applied, master left as it was: ' + '; '.join(problems) + f' (Photoshop output kept at {j["out"]})'); continue
+        print(f'{name}: Photoshop{st}; only the Shadow layer changed; render vs new PNG colour mean {d.mean():.3f} (every pixel above 5% alpha), alpha max {da:.2f}')
+        print(f'   master: old -> {backup(j["tif"])}'); shutil.move(j['out'], j['tif']); print(f'   wrote {j["tif"]}')
+        png = os.path.join(final, name + '.png'); os.makedirs(final, exist_ok=True)
+        if os.path.exists(png): print(f'   PNG: old -> {backup(png)}')
+        write_png(png, p['rgba']); print(f'   wrote {png}'); write_webp(png, overwrite=True)
+
 # ---------------------------------------------------------------- cli
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -830,12 +1030,20 @@ def main():
         if name == 'export':
             p.add_argument('--final-dir', help='PNG folder (default Final/PNG/[--subdir])'); p.add_argument('--subdir', help='e.g. Bundles for group shots: Final/PNG/Bundles/ + Final/WebP/Bundles/ + WIP/Bundles/ (the layered TIFF)')
             p.add_argument('--wip-dir'); p.add_argument('--overwrite', action='store_true'); p.add_argument('--no-tiff', action='store_true')
+    p = sub.add_parser('reshadow', help='refit the contact shadow to a master Chance edited by hand (preview; --apply to swap it in)')
+    p.add_argument('--product', help='file prefix, e.g. WheyIsolate'); p.add_argument('--views', help='comma list, e.g. Front,Back')
+    p.add_argument('--name', action='append', help='master file name without .tif, e.g. "Energy - Best" (repeatable); also with --product/--views')
+    p.add_argument('--root', default=default_root(), help='product-images folder (same default as the other commands)')
+    p.add_argument('--subdir', help='e.g. Bundles: WIP/Bundles/ + Final/PNG/Bundles/ + Final/WebP/Bundles/')
+    p.add_argument('--wip-dir'); p.add_argument('--final-dir'); p.add_argument('--work', help='previews + Photoshop scratch (default ~/Library/Caches/swolverine-product-photos/_reshadow)')
+    p.add_argument('--shadow', default='auto', choices=['auto', 'single', 'group'], help='auto = group (one shadow per product) for masters in WIP/Bundles/, else single')
+    p.add_argument('--apply', action='store_true', help='Chance approved the preview: swap the Shadow layer, verify, rewrite PNG + WebP (old master + PNG backed up to WIP/Previous versions/<name>-pre-reshadow)')
     a = ap.parse_args()
     if not a.root:
         sys.exit('No product-images folder set. Pass --root /path/to/folder, or set SWOL_PHOTO_ROOT, or save {"root": "/path/to/folder"} in '
                  '~/.config/swolverine-product-photos/config.json. The folder holds Raw/, WIP/ and Final/.')
     lazy()
-    {'preview': cmd_preview, 'mask': cmd_mask, 'podium-cut': cmd_podium_cut, 'render': cmd_render, 'match-light': cmd_match_light, 'qa': cmd_qa, 'export': cmd_export, 'webp': cmd_webp}[a.cmd](a)
+    {'preview': cmd_preview, 'mask': cmd_mask, 'podium-cut': cmd_podium_cut, 'render': cmd_render, 'match-light': cmd_match_light, 'qa': cmd_qa, 'export': cmd_export, 'webp': cmd_webp, 'reshadow': cmd_reshadow}[a.cmd](a)
 
 if __name__ == '__main__':
     main()

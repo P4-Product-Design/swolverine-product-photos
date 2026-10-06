@@ -7,6 +7,11 @@
 - **Before any new or untested JSX**, have Chance save and close their documents. The scripts check and refuse to run while any document is unsaved. Relaunching is fine: `open -a "Adobe Photoshop 2026"`, then poll `osascript -e 'tell application "Adobe Photoshop 2026" to get version'` until it answers.
 - **Debugging a JSX build:** split it into cumulative steps (open → load selection → add mask → curves → shadow → save) and run them one by one. That's how the crash above was found.
 - A curves adjustment layer made with `Mk`/`AdjL`/`Crvs` and `Grup: true` gives a clipped layer. Photoshop holds values flat beyond the first and last points, so the points file doesn't pin (0,0) or (255,255).
+- **Swapping a layer un-clips the layers above Product.** Duplicating a layer into a master, moving it into place and removing the old one leaves "Look (Curves)" and "Light match (Multiply)" un-clipped (`grouped` false). This happened every time on Chance's re-saved masters (2026-10-06).
+  - With Light match, the canvas turns fully opaque, and a PNG saved from the merged copy has no alpha.
+  - Without it, the render still matches, so the change is silent.
+  - Record `grouped` for every art layer by `id` before the swap and restore it after, as `reshadow` does. Then check the saved file's clip flags with psd_tools.
+- **The TIFF's saved composite is premultiplied** (ExtraSamples = associated alpha). Divide the colour by alpha before using it. Treating it as straight alpha darkens anti-aliased edges by about 100 levels. Comparing only opaque pixels misses this, so check every pixel above about 5% alpha.
 
 ## Masks
 

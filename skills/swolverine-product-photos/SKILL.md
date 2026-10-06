@@ -85,11 +85,25 @@ This is decoded from Chance's creatine front edit (`WIP/Product-Images.psd`, gro
 | Shadow | soft contact shadow under the base, black, replacing the old reflection (Chance, 2026-10-06). It's the shadow from the old website creatine image (`assets/shadow_template.npz`), re-fitted to each product's bottom outline and body width, at 0.8× the site's density. About 95–120px deep; darker under the left, halo reaching a little further right. Group shots: one shadow per product |
 | Drop shadow | **none**. The PSD's layer-effect drop shadow stays off; the contact shadow is its own layer |
 | Web export | sRGB PNG, transparent, 8-bit, embedded sRGB profile, plus a quality-90 WebP (transparency exact, sRGB profile kept) in `Final/WebP/` |
-| Master | layered TIFF: Look (Curves, clipped), [Light match (Multiply, clipped), only if match-light was used], Product (ungraded full frame plus layer mask), Shadow (black fill plus layer mask, 100%; lower its opacity to soften), White background (hidden) |
+| Master | layered TIFF: Look (Curves, clipped), [Light match (Multiply, clipped), only if match-light was used], Product (ungraded full frame plus layer mask), Shadow (black fill plus layer mask, 100%; lower its opacity to soften; after `reshadow`, a black pixel layer), White background (hidden). The TIFF's saved composite is premultiplied (associated alpha): divide by alpha before using its colour |
 | Approved brand blue (sRGB) | creatine #00BEF4, whey (light-matched) #00C3EA, whey vanilla #00C1E6; white panels land around (237–241) |
 
 ## When the job goes beyond the standard pipeline
 
+- **Chance edited a master by hand** (e.g. trimmed or straightened the bottom, cleaned the outline, retouched print), and the Shadow layer no longer sits under the product. Run `reshadow` on those masters. Its preview writes nothing to WIP/ or Final/.
+  - Run `$PY $SW reshadow --product WheyIsolate --views Front,Back`. Masters with other names use `--name "Energy - Best"` (repeatable), plus `--subdir Bundles` for group shots.
+  - Find the edited masters by modification date in WIP/, and confirm the list with Chance.
+  - It reads the master as it is now (the saved composite minus the current Shadow layer), so every edit to the mask or the pixels counts. It then refits the shadow, using one shadow per product for masters in WIP/Bundles/.
+  - It prints each product's lowest row against the 2913 baseline and how far below the bottom edge the shadow's darkest row sits: about 2px when it fits, 20px or more when it was left behind.
+  - It writes `<name>_reshadow.jpg` (current over refit) to `~/Library/Caches/swolverine-product-photos/_reshadow/`. Show Chance the previews.
+  - Don't move a trimmed product back down to the baseline unless Chance asks. His edit sets the position.
+  - Once Chance approves, rerun with `--apply`.
+    - Photoshop swaps only the Shadow layer: the new one is a black pixel layer that keeps the old layer's opacity and visibility. Photoshop un-clips "Look" and "Light match" while doing this; the script re-clips them.
+    - The script then checks the new master: every other layer must be unchanged (pixels, masks, clipping, visibility, opacity), and Photoshop's composite must match the new PNG on every pixel above 5% alpha.
+    - If that passes, the old master and PNG go to `WIP/Previous versions/<name>-pre-reshadow.tif/.png`, and the new PNG and WebP are written. If anything fails, it leaves the master untouched.
+    - The PNG is rebuilt from the master. A bundle whose PNG came from Python before can shift by about 0.3 levels, the known gap between that master and its old PNG.
+  - The Shadow layer must be black and Normal. If Chance painted on it by hand, the script stops: fix it in Photoshop first.
+  - First used on the six protein-bag masters Chance retouched on 2026-10-06. Their bottoms sat up to 24px above the baseline, and the old shadow's dark band hung 20–50px below them.
 - **Several views of one rigid product that must share an outline** (jar or tub back/side vs front, lid seated off-centre): read `references/multiview-outline-match.md`. It's the approach Chance approved for the creatine back/side. Only do it if Chance asks for matching outlines or notices a mismatch. It isn't part of the default run.
 - **Match lighting to another approved shot of the same packaging** (Chance preferred the vanilla pouch's lighting, from the creatine setup, over the chocolate's flatter light, 2026-09-25): run `$PY $SW match-light --product WheyIsolate --views Front,Back --to WheyIsolate-Vanilla:Front` after `render` and before `qa`. The donor must be rendered in its own cache folder.
   - It measures the donor/this ratio on flat white label areas only, in bag-relative coordinates, then smooths it (`--smooth 0.08` of the product size, broad light only).

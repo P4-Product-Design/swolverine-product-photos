@@ -52,6 +52,10 @@ Since 2026-10-06 every product sits on a soft contact shadow; the reflection is 
 - **Group shots.** One shadow for the whole group came out about 2× too deep (it scales with width) and streaked the gaps between bottles. `shadow_group` splits the bottom outline into products at upward notches (prominence ≥ 12px), gaps, and ≥ 18px steps near the base (a pouch behind a tub), and gives each product its own shadow, combined as 1 − Π(1 − s).
 - **Product pixels are never changed.** The shadow is black behind the product: alpha = a + s(1 − a), colour = graded · a / alpha.
 - **Migration.** All 96 Finals and their TIFF masters were converted on 2026-10-06 without re-rendering: the reflection was stripped from each PNG, the shadow added, and the master's Reflection layer swapped for a Shadow layer. The reflection versions are in `WIP/Previous versions/<name>-reflection.png/.tif`.
+- **Hand-edited masters (`reshadow`, v0.2.2).** The fit is measured from the product's own lowest row, not the 2913 baseline. For a render the two are the same row. They differ when Chance trims a bottom by hand.
+  - **The product is recovered from the master itself**, not from the cache. The TIFF's composite is associated alpha with the black shadow under the product, so the product alpha is A = (alpha − s)/(1 − s), where s is the Shadow layer's alpha × mask × opacity. The product colour is the premultiplied colour / A.
+  - **Regression on untouched masters:** creatine, Equilone, Energy - Best, Daily - Good and PRE+Shaker all came back within 1 level.
+  - **Why the per-layer checks.** Swapping a layer in Photoshop un-clips the clipped layers above Product, and that is easy to miss. Reading the composite as straight alpha darkened anti-aliased edges by about 100 levels on the first six protein-bag PNGs (fixed the same day). A check on opaque pixels only can't see that. reshadow fingerprints every other layer before and after, and checks the render on every pixel above 5% alpha.
 
 ## 5. Colour management and outputs
 
@@ -106,6 +110,16 @@ Since 2026-10-06 every product sits on a soft contact shadow; the reflection is 
 - Fine print hot spots: "NATURALLY FLAVORED / NET WT 1.71LB (775G)"; the nutrition facts; ingredients; the Prop 65 and FDA text; the address; the Lot/EXP code.
 - Glossy highlights: about 1% of the pouch clips to white, mostly the blue top. That matches Chance's look.
 
+### Protein bags retouched by hand (2026-10-06)
+- **What Chance changed**, on WheyIsolate Front, Back, Vanilla and Churro and PlantProtein Back and Chocolate-Front:
+  - straightened and trimmed the bottoms;
+  - removed the blue gusset showing under Churro and Chocolate;
+  - smoothed wrinkles;
+  - removed the illustration from the PlantProtein back.
+- **Bottoms now sit above the 2913 baseline:** Churro 2889, Chocolate 2891, Whey Front 2893, Vanilla and PlantProtein Back 2909, Whey Back 2913. Chance kept that position.
+- **Shadows refit to the new outlines.** The masters he saved are in `WIP/Previous versions/<name>-old-shadow.tif`, and the Finals from before his retouch are `<name>-pre-retouch.png`. This was done by hand and became the `reshadow` command.
+- **Left for Chance:** small brown specks near the bottom of the PlantProtein back.
+
 ## 7. What Chance corrected along the way (don't repeat these)
 - Preferred the vanilla pouch's lighting (the creatine setup: more shape, a darker lower body) over the chocolate's flatter, brighter light. The chocolate Front/Back were re-exported with `match-light` to the vanilla. The pre-match versions are in `WIP/Previous versions/`.
 - "AI generators drop the fine print": this is the reason for the whole non-generative approach.
@@ -113,3 +127,4 @@ Since 2026-10-06 every product sits on a soft contact shadow; the reflection is 
 - Wanted a single transparent PNG per view, not several variants. PNGs go in Final/PNG/ (moved there 2026-10-01; WebPs in Final/WebP/, bundles in a Bundles/ subfolder of each). Layered TIFFs go in WIP/, bundle TIFFs in WIP/Bundles/ (Chance moved them there and renamed the bundles by line and tier, 2026-10-06); no other extra folders.
 - Wanted editable layers in the TIFFs, not flattened images.
 - Replaced the faint reflection with a soft contact shadow like the one on the current website images (2026-10-06): the closer-to-site option, a tad lighter (0.8×), on every product.
+- Retouched masters must get a shadow that follows his edit, not the old outline (2026-10-06). Asked for the `reshadow` command so this is one step next time.

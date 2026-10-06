@@ -51,6 +51,8 @@ Point Claude at new raws and ask for the usual treatment, e.g.:
 
 or "do the next product", or "make these look like the other product images". Claude previews the raws, cuts out the product, matches exposure to the house podium, renders, and runs QA crops on the fine print. **It stops for your approval before anything is written to `Final/` or `WIP/`**, and never overwrites an existing export unless you say so.
 
+**Edited a master by hand?** If you retouch a layered TIFF in `WIP/` (say, trim the bottom of a bag), the shadow stays where the old edge was. Ask Claude to "reshadow" it. It shows you a before/after first. Once you approve, it swaps only the Shadow layer, checks that nothing else in the file changed, and refreshes the PNG and WebP. The old files go to `WIP/Previous versions/`.
+
 **Exposure matching.** Exposure is matched per capture session (the EXIF capture date). `assets/config.json` holds the approved gain for each known session and the reference raw it was measured against. If a reference raw isn't in your `Raw/` or `Archive/` folder, the approved session gain is still applied, but within-session exposure drift isn't corrected, and the script says so. A new session gets an estimated gain only; check it against the existing Finals and get the look approved before adding it to `config.json`.
 
 ## What's in this repo
