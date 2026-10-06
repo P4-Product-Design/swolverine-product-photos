@@ -110,6 +110,6 @@ Since 2026-10-06 every product sits on a soft contact shadow; the reflection is 
 - Preferred the vanilla pouch's lighting (the creatine setup: more shape, a darker lower body) over the chocolate's flatter, brighter light. The chocolate Front/Back were re-exported with `match-light` to the vanilla. The pre-match versions are in `WIP/Previous versions/`.
 - "AI generators drop the fine print": this is the reason for the whole non-generative approach.
 - "The cutout is slightly off from the original": the creatine back and side had a different outline from the front, and the lid was off-centre. Fixed with outline matching.
-- Wanted a single transparent PNG per view, not several variants. PNGs go in Final/PNG/ (moved there 2026-10-01; WebPs in Final/WebP/, bundles in a Bundles/ subfolder of each). Layered TIFFs go in WIP/, and there's no extra folder.
+- Wanted a single transparent PNG per view, not several variants. PNGs go in Final/PNG/ (moved there 2026-10-01; WebPs in Final/WebP/, bundles in a Bundles/ subfolder of each). Layered TIFFs go in WIP/, bundle TIFFs in WIP/Bundles/ (Chance moved them there and renamed the bundles by line and tier, 2026-10-06); no other extra folders.
 - Wanted editable layers in the TIFFs, not flattened images.
 - Replaced the faint reflection with a soft contact shadow like the one on the current website images (2026-10-06): the closer-to-site option, a tad lighter (0.8×), on every product.

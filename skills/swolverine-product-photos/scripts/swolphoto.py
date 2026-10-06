@@ -12,7 +12,7 @@ Subcommands (run in order; each prints what it wrote and what to look at):
   match-light  optional: match broad lighting to an approved donor shot of the same packaging (Multiply layer)
   qa           100% fine-print crops, edge crops, clipping and brand-blue check
   export       sRGB transparent PNG -> Final/PNG/ (+ q90 WebP -> Final/WebP/), layered 16-bit TIFF (built in Photoshop) -> WIP/
-               --subdir Bundles puts group shots in Final/PNG/Bundles/ + Final/WebP/Bundles/
+               --subdir Bundles puts group shots in Final/PNG/Bundles/ + Final/WebP/Bundles/ + WIP/Bundles/
   webp         WebP copies of PNGs already in Final/PNG/ (--views all for every PNG)
 
 Typical run:
@@ -716,7 +716,7 @@ def cmd_webp(a):
 
 # ---------------------------------------------------------------- export
 def cmd_export(a):
-    wd = work_dir(a); final = png_dir(a); wip = a.wip_dir or os.path.join(a.root, 'WIP')
+    wd = work_dir(a); final = png_dir(a); wip = a.wip_dir or os.path.join(a.root, 'WIP', *([a.subdir] if a.subdir else []))   # bundle masters in WIP/Bundles/ (Chance, 2026-10-06)
     os.makedirs(final, exist_ok=True); os.makedirs(wip, exist_ok=True)
     from PIL import ImageCms
     icc_srgb = ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes()
@@ -828,7 +828,7 @@ def main():
             p.add_argument('--final-dir', help='PNG folder (default Final/PNG/[--subdir])'); p.add_argument('--subdir', help='e.g. Bundles: Final/PNG/Bundles/ (WebPs in Final/WebP/Bundles/)'); p.add_argument('--overwrite', action='store_true')
             p.add_argument('--lossless', action='store_true', help='pixel-identical WebP (about 35%% smaller than PNG) instead of the default q90 (about 10-15x smaller)')
         if name == 'export':
-            p.add_argument('--final-dir', help='PNG folder (default Final/PNG/[--subdir])'); p.add_argument('--subdir', help='e.g. Bundles for group shots: Final/PNG/Bundles/ + Final/WebP/Bundles/ (the TIFF still goes to WIP/)')
+            p.add_argument('--final-dir', help='PNG folder (default Final/PNG/[--subdir])'); p.add_argument('--subdir', help='e.g. Bundles for group shots: Final/PNG/Bundles/ + Final/WebP/Bundles/ + WIP/Bundles/ (the layered TIFF)')
             p.add_argument('--wip-dir'); p.add_argument('--overwrite', action='store_true'); p.add_argument('--no-tiff', action='store_true')
     a = ap.parse_args()
     if not a.root:

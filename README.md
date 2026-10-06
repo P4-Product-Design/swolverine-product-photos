@@ -8,7 +8,7 @@ It reproduces the look Chance built by hand in Photoshop. **It never uses genera
 
 1. **A Mac with Adobe Photoshop 2026.** The pipeline drives Photoshop through AppleScript (Select Subject for the mask, and building the layered TIFF). It won't run on Windows or Linux. If your Photoshop has a different name, set `SWOL_PS_APP` (for example `SWOL_PS_APP="Adobe Photoshop 2027"`).
 2. **Python 3.** The skill builds a private virtualenv at `~/.cache/swolverine-product-photos/venv` (numpy, opencv, tifffile, pillow, scipy) the first time it runs.
-3. **Your own product-images folder.** It holds `Raw/` (camera TIFFs named `<Product>-<View>.tif`), `WIP/` (layered masters) and `Final/` (web images: `Final/PNG/` and `Final/WebP/`, each with a `Bundles/` subfolder for group shots). Nothing in this plugin is tied to anyone's location. Tell it where yours is by any one of:
+3. **Your own product-images folder.** It holds `Raw/` (camera TIFFs named `<Product>-<View>.tif`), `WIP/` (layered masters) and `Final/` (web images: `Final/PNG/` and `Final/WebP/`). Each of `WIP/`, `Final/PNG/` and `Final/WebP/` has a `Bundles/` subfolder for group shots. Nothing in this plugin is tied to anyone's location. Tell it where yours is by any one of:
    - `export SWOL_PHOTO_ROOT="/path/to/your/Product images"` in your shell
    - saving `{"root": "/path/to/your/Product images"}` in `~/.config/swolverine-product-photos/config.json`
    - passing `--root /path/to/folder` on each run

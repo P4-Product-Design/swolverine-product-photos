@@ -24,7 +24,7 @@ Each person keeps their own product-images folder. Point the pipeline at it with
 - `WIP/`: layered masters `<Product>-<View>.tif` (16-bit Adobe RGB, transparent). This folder also holds Chance's own `Product-Images.psd`, `CreatineMonohydrate.tif` and `Originals/`, which you must never modify. When Chance approves replacing an exported file, move the old PNG/TIFF into `WIP/Previous versions/` first (Chance asked for this on 2026-09-25).
 - `Final/PNG/`: web images `<Product>-<View>.png` (3247×3247, 8-bit sRGB, transparent). Chance moved them here on 2026-10-01. `Final/WebP/<Product>-<View>.webp` holds a quality-90 WebP of every PNG, about 15× smaller (Chance asked for small WebPs on 2026-09-29). Don't create any other folders, such as a "renders" folder.
 - `Archive/`: old material, but it holds the Aug 31 session reference raw (`CreatineMonohydrate-1 1 (1).tif`); never delete it. Chance deletes raws from `Raw/` once they're exported.
-- `Final/PNG/Bundles/`, `Final/WebP/Bundles/`: group shots. Export them with `--subdir Bundles`.
+- `Final/PNG/Bundles/`, `Final/WebP/Bundles/`, `WIP/Bundles/`: group shots (PNG, WebP, layered TIFF). Export them with `--subdir Bundles`. Chance names them by line and tier, e.g. `Energy - Best`, `Daily - Good`, `PRE+Shaker` (2026-10-06): export, then rename all three files to the agreed name.
 
 ## How to run it
 
@@ -61,7 +61,7 @@ P=WheyIsolate; V=Front,Back                                               # prod
    - Check the clipped-to-white % and the brand blue against the approved values.
 6. **Show Chance** the contact sheet and QA crops, with a short numbered summary: scale, gain, clipping, anything to retouch by hand. Wait for approval.
 7. **Export:** `$PY $SW export --product $P --views $V`.
-   - It writes the PNG to Final/PNG/ and the WebP to Final/WebP/, then builds the layered TIFF in Photoshop. With `--subdir Bundles`, they go to Final/PNG/Bundles/ and Final/WebP/Bundles/.
+   - It writes the PNG to Final/PNG/ and the WebP to Final/WebP/, then builds the layered TIFF in Photoshop. With `--subdir Bundles`, they go to Final/PNG/Bundles/ and Final/WebP/Bundles/, and the TIFF to WIP/Bundles/.
    - The WebP is lossy quality 90 at full size: 0.2–0.5 MB against 3–6 MB for the PNG.
    - At that quality the fine print, including the creatine's tiny blue sub-heading, is indistinguishable from the PNG at 2× zoom.
    - It's decoded back and checked: transparency must match exactly and colour must be within 2.5 levels on average (it's usually 1.1–1.6), or it isn't kept.
@@ -122,7 +122,7 @@ This is decoded from Chance's creatine front edit (`WIP/Product-Images.psd`, gro
   - **Exposure.** Use `--gain white:WheyIsolate-Vanilla:Front`. Products sit at different distances from the lights in each setup: the same bottle was 11% brighter in one shot than in another. Wall and podium matching gave 22–47% clipping, and product-white anchoring brought it to 0–3%.
   - **Scale.** Small groups get upscaled (bottles-only at 1.3–1.9×), so tell Chance.
   - **Shadow.** `render` gives each product its own shadow, sized to that product: it splits the bottom outline where two bases meet (an upward notch), at gaps, and where a back product's base steps down to a front one (a pouch behind a tub). Check `contact_sheet.jpg` that each product sits on its own shadow.
-  - **Where they go.** Bundles live in `Final/PNG/Bundles/` and `Final/WebP/Bundles/`; layered TIFFs stay in WIP/. Run `export --subdir Bundles` and the files land there directly.
+  - **Where they go.** Bundles live in `Final/PNG/Bundles/`, `Final/WebP/Bundles/` and `WIP/Bundles/` (layered TIFFs). Run `export --subdir Bundles` and the files land there directly.
 - **Adding a product that isn't in the shot** (Bundle 12 + Intra, approved 2026-10-01). Only composite real camera pixels, taken from a shot with the same setup, camera angle and light. The single-product riser shots don't match the tabletop angle.
   - Find every edge the donor product hides in its own shot, and every edge the target shot hides. Then pick a layout where something in front still covers each hidden edge.
   - Mock up the options before building one. Driver scripts: `~/Library/Caches/swolverine-product-photos/_batch/bundle12_intra/` (`segment.py`, `compose.py`, `build_tiff.py`).
